@@ -3,6 +3,8 @@
 使い方:
     python -m app.cli init-db
     python -m app.cli extract path/to/book.pdf [--book-id BOOK001] [--title 書名]
+    python -m app.cli structure BOOK001
+    python -m app.cli script BOOK001 [--llm anthropic] [--sections CH001-SEC002,...]
     python -m app.cli validate data/BOOK001/manuscript.json
 """
 from __future__ import annotations
@@ -94,6 +96,34 @@ def cmd_structure(cfg, args) -> int:
     return 0
 
 
+def cmd_script(cfg, args) -> int:
+    from . import script_gen
+
+    bdir = book_dir(cfg, args.book_id)
+    m = manuscript.load(bdir / "manuscript.json")
+    if args.llm:
+        cfg.setdefault("llm", {})["provider"] = args.llm
+    rewriter = script_gen.make_rewriter(cfg)
+    conn = db.connect(Path(cfg["_root"]) / cfg["db_path"])
+    job = db.start_job(conn, args.book_id, "script")
+    only = set(args.sections.split(",")) if args.sections else None
+    prog = lambda i, n, sid: print(f"\r  整形中 {sid} ({i}/{n})", end="", file=sys.stderr, flush=True)  # noqa: E731
+    try:
+        stats = script_gen.generate(m, cfg, rewriter, only=only, progress=prog)
+        print(file=sys.stderr)
+        manuscript.save(m, bdir / "manuscript.json")
+        (bdir / "script_report.md").write_text(script_gen.report_markdown(m, stats), encoding="utf-8")
+    except Exception as e:
+        db.finish_job(conn, job, "failed", repr(e))
+        raise
+    db.finish_job(conn, job, "done", " ".join(f"{k}={v}" for k, v in stats.items()))
+    mode = "ルール＋生成AI" if rewriter else "ルールのみ"
+    print(f"読み上げ文を作成しました（{mode}）: 節 {stats['sections']}  生成AI {stats['llm']}  "
+          f"不採用 {stats['llm_rejected']}  失敗 {stats['llm_failed']}  本文なし {stats['empty']}")
+    print(f"レポート: {bdir / 'script_report.md'}")
+    return 0
+
+
 def cmd_validate(cfg, args) -> int:
     errors = manuscript.validate(manuscript.load(args.path))
     if errors:
@@ -118,11 +148,15 @@ def main(argv=None) -> int:
     p.add_argument("--ocr-engine", choices=["auto", "google", "ocrmac", "tesseract", "none"], help="config.yaml の設定を上書き")
     p = sub.add_parser("structure", help="STEP 3: 章・節を構造化して manuscript.json を作成")
     p.add_argument("book_id")
+    p = sub.add_parser("script", help="STEP 4: 節ごとの読み上げ文（audio_text）を作成")
+    p.add_argument("book_id")
+    p.add_argument("--llm", choices=["none", "anthropic"], help="config.yaml の llm.provider を上書き")
+    p.add_argument("--sections", help="作り直す節ID（カンマ区切り）。省略で全節")
     p = sub.add_parser("validate", help="原稿JSONをスキーマ検証")
     p.add_argument("path")
     args = ap.parse_args(argv)
     cfg = load_config(args.config)
-    return {"init-db": cmd_init_db, "extract": cmd_extract, "structure": cmd_structure, "validate": cmd_validate}[args.cmd](cfg, args)
+    return {"init-db": cmd_init_db, "extract": cmd_extract, "structure": cmd_structure, "script": cmd_script, "validate": cmd_validate}[args.cmd](cfg, args)
 
 
 if __name__ == "__main__":

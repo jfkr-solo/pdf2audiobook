@@ -6,6 +6,7 @@
     python -m app.cli structure BOOK001
     python -m app.cli script BOOK001 [--llm anthropic] [--sections CH001-SEC002,...]
     python -m app.cli dict BOOK001
+    python -m app.cli check BOOK001
     python -m app.cli validate data/BOOK001/manuscript.json
 """
 from __future__ import annotations
@@ -177,6 +178,24 @@ def cmd_script(cfg, args) -> int:
     return 0
 
 
+def cmd_check(cfg, args) -> int:
+    """STEP 6: 読み上げ文を原文と照合し、節ごとの validation を保存する。"""
+    from . import text_check
+
+    bdir = book_dir(cfg, args.book_id)
+    m = manuscript.load(bdir / "manuscript.json")
+    result = text_check.run(m)
+    errors = manuscript.validate(m)
+    if not errors:
+        manuscript.save(m, bdir / "manuscript.json")
+    (bdir / "validation_report.md").write_text(text_check.report_markdown(m, result, errors), encoding="utf-8")
+    st = result["status"]
+    print(f"問題なし {st.get('passed', 0)}  要確認 {st.get('warning', 0)}  要修正 {st.get('failed', 0)}  "
+          f"順序の指摘 {len(result['order'])}  スキーマ {'OK' if not errors else 'NG'}")
+    print(f"レポート: {bdir / 'validation_report.md'}")
+    return 1 if errors or st.get("failed") else 0
+
+
 def cmd_validate(cfg, args) -> int:
     errors = manuscript.validate(manuscript.load(args.path))
     if errors:
@@ -208,11 +227,13 @@ def main(argv=None) -> int:
     p = sub.add_parser("dict", help="STEP 5: 読み方辞書を適用し、未登録語の読み候補を教材辞書に追加")
     p.add_argument("book_id")
     p.add_argument("--no-suggest", action="store_true", help="候補を書き足さず、未登録語の一覧だけ出す")
+    p = sub.add_parser("check", help="STEP 6: 読み上げ文を原文と照合（文字カバー率・数値・順序）")
+    p.add_argument("book_id")
     p = sub.add_parser("validate", help="原稿JSONをスキーマ検証")
     p.add_argument("path")
     args = ap.parse_args(argv)
     cfg = load_config(args.config)
-    return {"init-db": cmd_init_db, "extract": cmd_extract, "structure": cmd_structure, "script": cmd_script, "dict": cmd_dict, "validate": cmd_validate}[args.cmd](cfg, args)
+    return {"init-db": cmd_init_db, "extract": cmd_extract, "structure": cmd_structure, "script": cmd_script, "dict": cmd_dict, "check": cmd_check, "validate": cmd_validate}[args.cmd](cfg, args)
 
 
 if __name__ == "__main__":

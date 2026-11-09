@@ -120,11 +120,18 @@ def _body_size(pages: list[dict]) -> float:
     return statistics.median(sizes) if sizes else 10.0
 
 
-def _is_heading(line: dict, body: float, is_ocr: bool) -> bool:
+def _is_heading(line: dict, body: float, is_ocr: bool, base: float | None = None,
+                vertical: bool = False) -> bool:
     t = line["text"].strip()
-    if not (2 <= len(t) <= 30) or t.endswith(END_PUNCT):
+    if not (2 <= len(t) <= 30) or (is_ocr and line.get("ocr_conf", 0) < 70):
         return False
-    if is_ocr and line.get("ocr_conf", 0) < 70:
+    # 縦書きの見出しは本文の行頭より上（天）にはみ出して組まれることが多い。
+    # OCRエンジンによって文字サイズの測り方が違い大きさだけでは拾えないため、位置でも判定する。
+    # 2行見出しの1行目は「、」、2行目は「」」で終わることがあるので句読点の除外より先に見る
+    if vertical and base is not None and line["bbox"][1] < base - body * 1.5 \
+            and line["size"] >= body and not t.endswith("。"):
+        return True
+    if t.endswith(END_PUNCT):
         return False
     if CHAPTER_RE.match(t) and line["size"] >= body * 1.05:
         return True
@@ -197,6 +204,7 @@ def build(pages_doc: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     cur_idx = [0]
     front_lines: list[str] = []
     line_pos: dict[int, list] = {}  # ページ → [(読み順の位置, 節)]
+    title_page_idx: list[int] = []  # 章扉と判断したページ
 
     def flush_pending(chap) -> None:
         """本文が続かなかった見出し（表紙の書名など）を処理する。"""
@@ -247,7 +255,9 @@ def build(pages_doc: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             # 後ろで始まった節は、新しい章の冒頭として移す
             if prev is not None and not toc_l1:
                 cut = prev.get("last_head_idx", -1)
-                moving = [x for x in prev["sections"] if x["idx"] > cut]
+                # 章扉が見つかっていれば、扉より前に始まった節は前の章に残す（見開きの入れ替わり対策）
+                doors = [i for i in title_page_idx if cut < i <= pidx]
+                moving = [x for x in prev["sections"] if x["idx"] > cut and (not doors or x["idx"] >= doors[-1])]
                 if moving:
                     prev["sections"] = [x for x in prev["sections"] if x["idx"] <= cut]
                     ch["sections"] = moving
@@ -264,7 +274,12 @@ def build(pages_doc: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             if norm == norm_title(ch["title"]) and not ch["sections"]:
                 flush_pending(None if len(chapters) == 1 else chapters[-2])
                 continue  # 章タイトルそのものの行
-            if (p["page"], norm) in toc_l2 or _is_heading(l, body, is_ocr):
+            # 柱から章名が取れている本では、章扉の「第3章」や大きな章題の文字は章名と重複するので読まない
+            if canon and not toc_l1 and (re.fullmatch(r"第[0-9０-９一二三四五六七八九十]+章", norm)
+                                         or (is_ocr and l["size"] >= body * 2.2 and len(norm) <= 15)):
+                title_page_idx.append(pidx)
+                continue
+            if (p["page"], norm) in toc_l2 or _is_heading(l, body, is_ocr, base, vertical):
                 if CHAPTER_RE.match(text) and not toc_l1:
                     flush_pending(ch if ch["sections"] else None)
                     if ch["sections"] or norm_title(ch["title"]) != norm:

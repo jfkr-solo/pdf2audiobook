@@ -221,6 +221,14 @@ def extract(pdf_path: str, cfg: dict[str, Any] | None = None, pages_range: range
                                if _in_margin(l["bbox"], p["width"], p["height"], margin_ratio)})
     min_repeat = max(2, int(len(pages) * repeat_ratio)) if len(pages) >= 3 else 10**9
     repeated = {k for k, c in margin_counter.items() if c >= min_repeat}
+    # OCR では柱（章名）とページ番号が別の行に分かれて読まれることがある（Google Vision など）。
+    # 余白にあり、3ページ以上で同じ文字列が出る短い行は柱とみなす
+    ocr_margin: Counter[str] = Counter()
+    for p in pages:
+        if p["method"].startswith("ocr"):
+            ocr_margin.update({_norm(l["text"]) for l in p["lines"] if 2 <= len(_norm(l["text"])) <= 30
+                               and _in_margin(l["bbox"], p["width"], p["height"], margin_ratio * 1.6)})
+    ocr_heads = {k for k, c in ocr_margin.items() if c >= 3 and k not in repeated}
 
     # 3) 不要行の除去・図表/数式の印付け
     for p in pages:
@@ -228,11 +236,17 @@ def extract(pdf_path: str, cfg: dict[str, Any] | None = None, pages_range: range
         running, printed = None, None
         tables = [f for f in p["figures"] if f["kind"] == "table"]
         for l in p["lines"]:
+            ocr_page = p["method"].startswith("ocr")
+            in_margin = _in_margin(l["bbox"], p["width"], p["height"], margin_ratio * (1.6 if ocr_page else 1))
+            if ocr_page and in_margin and _norm(l["text"]) in ocr_heads and not PAGE_NUM_RE.match(l["text"]):
+                # 柱は本文より小さい文字なのでルビ判定より先に見る
+                running = _norm(l["text"])
+                removed.append({"text": l["text"], "reason": "running_head"})
+                continue
             if l.get("is_ruby"):
                 removed.append({"text": l["text"], "reason": "ruby"})
                 continue
-            ocr_page = p["method"].startswith("ocr")
-            if _in_margin(l["bbox"], p["width"], p["height"], margin_ratio * (1.6 if ocr_page else 1)):
+            if in_margin:
                 t = l["text"]
                 if _norm_margin(t) in repeated or PAGE_NUM_RE.match(t):
                     removed.append({"text": t, "reason": "header_footer"})

@@ -63,3 +63,18 @@ def test_page_reorder_with_swapped_scan():
     assert [p["book_page"] for p in ordered] == [13, 14, 15, 16, 17, 18, 19, 20, 21]
     assert [p["page"] for p in ordered] == [1, 3, 2, 5, 4, 7, 6, 9, 8]
     assert any("入れ替え" in n for n in notes)
+
+
+def test_vertical_heading_detected_by_position():
+    """Google Vision では見出しと本文の文字サイズ差が小さい。天にはみ出した行を見出しとみなす。"""
+    from app.structure import _is_heading
+    body = 15.8
+    base = 140.0  # 本文の行頭（上端）
+    heading = {"text": "単純な原理原則が", "size": 18.5, "bbox": [397.9, 86.2, 416.9, 231.6], "ocr_conf": 99}
+    second = {"text": "道しるべとなる「生きた哲学」", "size": 18.0, "bbox": [380.0, 80.0, 398.0, 300.0], "ocr_conf": 99}
+    body_line = {"text": "不祥事を起こす人がいます", "size": 17.0, "bbox": [226.6, 140.6, 243.8, 336.7], "ocr_conf": 99}
+    sentence = {"text": "惧しているのです。", "size": 18.7, "bbox": [226.6, 80.0, 243.8, 336.7], "ocr_conf": 99}
+    assert _is_heading(heading, body, True, base, True)
+    assert _is_heading(second, body, True, base, True)
+    assert not _is_heading(body_line, body, True, base, True)
+    assert not _is_heading(sentence, body, True, base, True)

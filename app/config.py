@@ -32,7 +32,8 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
 
 
 def data_dir(cfg: dict[str, Any]) -> Path:
-    p = Path(cfg.get("data_dir", "data"))
+    # 環境変数 PDF2AUDIOBOOK_DATA_DIR があれば優先（Cloud Run でバケットを /data にマウントする場合など）
+    p = Path(os.environ.get("PDF2AUDIOBOOK_DATA_DIR") or cfg.get("data_dir", "data"))
     return p if p.is_absolute() else ROOT / p
 
 

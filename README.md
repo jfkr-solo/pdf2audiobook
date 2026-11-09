@@ -17,7 +17,7 @@ PDF教材から、内容を正確に保った日本語オーディオブック�
 | 8 | 結合・MP3（章ごと・全章結合版、音量正規化、ID3タグ） | 完了 |
 | 9 | 音声の品質確認・部分再生成 | 完了 |
 | 10 | Web画面・スマホ対応（再生・続きから・倍速・処理状況） | 完了 |
-| 11 | 外部アクセス・RSS | RSS 完了、置き場所は検討中 |
+| 11 | 外部アクセス・RSS（Cloud Run） | 完了（配置は手順に沿って実行） |
 
 ## セットアップ（Mac mini）
 
@@ -174,6 +174,26 @@ APP_PASSWORD=好きなパスワード uvicorn app.web.main:create_app --factory 
 - `APP_PASSWORD` があるときは、RSS と音声の URL に合言葉 `?t=...` が付く（パスワードから作る。`APP_FEED_TOKEN` で指定も可）。合言葉では Web 画面は開けない
 - URL は処理状況のページ（`/books/<本>/status`）に表示される。公開 URL が違う場合（プロキシの内側など）は `APP_BASE_URL` を設定
 - Apple Podcast の「URLで番組をフォロー」や Overcast に登録すると、倍速・続きから・オフライン再生がアプリ側で使える
+
+## Cloud Run に置く（iPhone から外出先で聞く）
+
+Web 画面だけを Cloud Run で動かし、音声は Cloud Storage のバケットから読みます（音声づくりはこのリポジトリの CLI で行う）。
+
+1. [Google Cloud Shell](https://shell.cloud.google.com/) を開き、次を実行（パスワードを聞かれるので決めて入力）
+   ```bash
+   git clone https://github.com/jfkr-solo/pdf2audiobook.git && cd pdf2audiobook
+   gcloud config set project <プロジェクトID>
+   bash deploy/cloudrun.sh
+   ```
+2. 本のデータ（`BOOK001/manuscript.json` と `BOOK001/audio/*.mp3`）をバケットに置く
+   ```bash
+   unzip BOOK001_upload.zip && gcloud storage cp -r BOOK001 gs://<プロジェクトID>-pdf2audiobook/
+   ```
+3. 表示された URL を iPhone の Safari で開き、パスワードを入れる（ユーザー名は何でもよい）。ポッドキャストの URL は処理状況のページにある
+
+- バケットは非公開（public access prevention）。音声は Web 画面のパスワードか RSS の合言葉が無いと取れない
+- 使わないときはインスタンス 0 台になるので、料金はほぼ音声の保存と転送の分だけ
+- コードを更新したら `git pull && bash deploy/cloudrun.sh` で上書き
 
 ## 設計上の約束
 

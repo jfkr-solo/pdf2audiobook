@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block main %}
+<h1>本の一覧</h1>
+{% if not books %}<p class="muted">まだ本がありません。<code>python -m app.cli extract</code> から始めてください。</p>{% endif %}
+<ul class="cards">
+{% for b in books %}
+  <li class="card">
+    <a href="/books/{{ b.id }}" class="card-link">
+      <span class="card-title">{{ b.title }}</span>
+      <span class="muted">{% if b.author %}{{ b.author }} · {% endif %}{{ b.playable }}/{{ b.chapters|length }} 章 · {{ b.total_text }}</span>
+      <span class="resume muted" data-book="{{ b.id }}"></span>
+    </a>
+  </li>
+{% endfor %}
+</ul>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll(".resume").forEach(el => {
+  try {
+    const s = JSON.parse(localStorage.getItem("pos:" + el.dataset.book) || "null");
+    if (s && s.title) el.textContent = "続き: " + s.title;
+  } catch (e) {}
+});
+</script>
+{% endblock %}

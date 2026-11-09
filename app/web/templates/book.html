@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ b.title }}{% endblock %}
+{% block nav %}<a href="/books/{{ b.id }}/status" class="nav">処理状況</a>{% endblock %}
+{% block main %}
+<h1>{{ b.title }}</h1>
+<p class="muted">{% if b.author %}{{ b.author }} · {% endif %}{{ b.total_text }}</p>
+
+<section class="player" id="player" hidden>
+  <div class="now" id="now">章を選んでください</div>
+  <audio id="audio" preload="metadata"></audio>
+  <input type="range" id="seek" min="0" max="0" step="1" value="0" aria-label="再生位置">
+  <div class="time"><span id="cur">0:00</span><span id="dur">0:00</span></div>
+  <div class="controls">
+    <button id="back" aria-label="15秒戻る">−15秒</button>
+    <button id="play" class="primary" aria-label="再生">再生</button>
+    <button id="fwd" aria-label="30秒進む">+30秒</button>
+  </div>
+  <div class="speeds" role="group" aria-label="再生速度">
+    {% for r in [1.0, 1.25, 1.5, 1.75, 2.0] %}<button data-rate="{{ r }}">{{ r }}×</button>{% endfor %}
+  </div>
+</section>
+
+<ol class="chapters">
+{% for c in b.chapters %}
+  <li>
+    {% if c.file %}
+    <button class="chapter" data-file="{{ c.file }}" data-title="{{ c.title }}">
+      <span>{{ c.title }}</span><span class="muted">{{ c.duration_text }}</span>
+      <span class="progress" data-file="{{ c.file }}"></span>
+    </button>
+    {% else %}
+    <div class="chapter disabled"><span>{{ c.title }}</span><span class="muted">音声なし</span></div>
+    {% endif %}
+  </li>
+{% endfor %}
+</ol>
+{% if b.whole_file %}<p><a class="muted" href="/media/{{ b.id }}/{{ b.whole_file|urlencode }}" download>全章結合版をダウンロード</a></p>{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>window.BOOK = {{ {"id": b.id, "title": b.title, "author": b.author}|tojson }};</script>
+<script src="{{ url_for('static', path='player.js') }}"></script>
+{% endblock %}

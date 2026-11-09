@@ -112,3 +112,122 @@ def ocrmac_page(page: pymupdf.Page, dpi: int = 300) -> dict[str, Any]:
     confs = [l["ocr_conf"] for l in lines]
     return {"lines": lines, "mean_conf": round(statistics.mean(confs), 1) if confs else 0.0,
             "low_conf_words": weak, "writing_mode": "vertical" if vertical else "horizontal"}
+
+
+# ---------------------------------------------------------------- Google Cloud Vision
+VISION_URL = "https://vision.googleapis.com/v1/images:annotate"
+
+
+def _vision_request(png: bytes, api_key: str, lang_hints: list[str]) -> dict[str, Any]:
+    import base64
+    import json
+    import time
+    import urllib.error
+    import urllib.request
+
+    body = json.dumps({"requests": [{
+        "image": {"content": base64.b64encode(png).decode()},
+        "features": [{"type": "DOCUMENT_TEXT_DETECTION"}],
+        "imageContext": {"languageHints": lang_hints},
+    }]}).encode()
+    req = urllib.request.Request(f"{VISION_URL}?key={api_key}", data=body,
+                                 headers={"Content-Type": "application/json"})
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                res = json.loads(r.read())["responses"][0]
+            if "error" in res:
+                raise RuntimeError(f"Vision API エラー: {res['error'].get('message')}")
+            return res
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 500, 503) and attempt < 3:
+                time.sleep(2 ** (attempt + 1))
+                continue
+            detail = e.read().decode(errors="replace")[:300]
+            raise RuntimeError(f"Vision API HTTP {e.code}: {detail}") from None
+    raise RuntimeError("Vision API: 再試行の上限に達しました")
+
+
+def _vision_lines(res: dict[str, Any], scale: float) -> list[dict[str, Any]]:
+    """fullTextAnnotation の文字（symbol）を改行情報で行にまとめる。"""
+    lines: list[dict[str, Any]] = []
+    for page in res.get("fullTextAnnotation", {}).get("pages", []):
+        for block in page.get("blocks", []):
+            for para in block.get("paragraphs", []):
+                cur: list[dict] = []
+
+                def flush():
+                    if not cur:
+                        return
+                    xs = [v.get("x", 0) for s in cur for v in s["boundingBox"]["vertices"]]
+                    ys = [v.get("y", 0) for s in cur for v in s["boundingBox"]["vertices"]]
+                    x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+                    vertical = (y1 - y0) > (x1 - x0) * 1.5
+                    thick = statistics.median(
+                        (max(v.get("x", 0) for v in s["boundingBox"]["vertices"]) - min(v.get("x", 0) for v in s["boundingBox"]["vertices"]))
+                        if vertical else
+                        (max(v.get("y", 0) for v in s["boundingBox"]["vertices"]) - min(v.get("y", 0) for v in s["boundingBox"]["vertices"]))
+                        for s in cur)
+                    text = "".join(s["text"] + (" " if s.get("property", {}).get("detectedBreak", {}).get("type") == "SPACE" else "") for s in cur)
+                    confs = [s.get("confidence", 0) for s in cur]
+                    lines.append({
+                        "text": join_cjk(text),
+                        "size": round(thick * scale, 1),
+                        "column_width": round((x1 - x0) * scale, 1),
+                        "bold": False,
+                        "font": "ocr:google",
+                        "bbox": [round(v * scale, 1) for v in (x0, y0, x1, y1)],
+                        "ocr_conf": round(statistics.mean(confs) * 100, 1),
+                        "_vertical": vertical,
+                        "_weak": [s["text"] for s in cur if s.get("confidence", 1) < 0.6],
+                    })
+                    cur.clear()
+
+                for word in para.get("words", []):
+                    for sym in word.get("symbols", []):
+                        cur.append(sym)
+                        brk = sym.get("property", {}).get("detectedBreak", {}).get("type")
+                        if brk in ("LINE_BREAK", "EOL_SURE_SPACE"):
+                            flush()
+                flush()
+    return lines
+
+
+def google_page(page: pymupdf.Page, api_key: str, dpi: int = 300, cache_path=None,
+                lang_hints: list[str] | None = None) -> dict[str, Any]:
+    """Google Cloud Vision の DOCUMENT_TEXT_DETECTION で OCR する。
+    応答は cache_path に保存し、再実行時は API を呼ばない（料金の二重払いを防ぐ）。"""
+    import json
+    from pathlib import Path
+
+    res = None
+    if cache_path and Path(cache_path).exists():
+        res = json.loads(Path(cache_path).read_text(encoding="utf-8"))
+    if res is None:
+        pix = page.get_pixmap(dpi=dpi, colorspace=pymupdf.csGRAY)
+        res = _vision_request(pix.tobytes("png"), api_key, lang_hints or ["ja"])
+        res["_dpi"] = dpi
+        if cache_path:
+            Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(cache_path).write_text(json.dumps(res, ensure_ascii=False), encoding="utf-8")
+    scale = 72.0 / res.get("_dpi", dpi)
+    lines = _vision_lines(res, scale)
+
+    n_vert = sum(1 for l in lines if l["_vertical"] and len(l["text"]) >= 5)
+    n_horz = sum(1 for l in lines if not l["_vertical"] and len(l["text"]) >= 5)
+    vertical = n_vert > n_horz
+    # ルビ（ふりがな）: 本文の行より明らかに細い行。本文から外して記録する
+    body = [l["size"] for l in lines if len(l["text"]) >= 10]
+    med = statistics.median(body) if body else 0
+    weak: list[str] = []
+    for l in lines:
+        l["is_ruby"] = bool(med) and l["size"] < med * 0.6 and len(l["text"]) <= 8
+        weak += l.pop("_weak")
+        l.pop("_vertical")
+    if vertical:
+        lines.sort(key=lambda l: (-l["bbox"][2], l["bbox"][1]))
+    else:
+        lines.sort(key=lambda l: (l["bbox"][1], l["bbox"][0]))
+    confs = [l["ocr_conf"] for l in lines if not l["is_ruby"]]
+    return {"lines": lines, "mean_conf": round(statistics.mean(confs), 1) if confs else 0.0,
+            "low_conf_words": weak, "writing_mode": "vertical" if vertical else "horizontal"}

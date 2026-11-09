@@ -1,0 +1,34 @@
+# 全体設定。ローカル/クラウドの切替はここで行う。
+data_dir: data
+db_path: data/audiobook.db
+
+extract:
+  # 1ページの抽出文字数がこれ未満ならスキャンページとみなしOCRする
+  ocr_min_chars: 20
+  # ocr エンジン: auto | ocrmac | tesseract | none
+  ocr_engine: auto
+  ocr_lang: jpn
+  # ヘッダー/フッター判定: ページ上端・下端からこの割合の帯
+  margin_ratio: 0.08
+  # 同じ文字列がこの割合以上のページに出たらヘッダー/フッターとみなす
+  repeat_ratio: 0.5
+
+llm:
+  provider: none        # none | anthropic
+  model: claude-haiku-5-5
+
+tts:
+  engine: macos_say     # macos_say | voicevox | google
+  speaker: Kyoko
+  speed: 1.0
+  pitch: 0.0
+  volume: 1.0
+  sentence_pause_ms: 400
+  section_pause_ms: 1500
+  chapter_pause_ms: 3000
+
+audio:
+  format: mp3
+  bitrate: 64k
+  sample_rate: 24000
+  channels: 1

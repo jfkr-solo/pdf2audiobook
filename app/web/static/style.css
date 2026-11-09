@@ -47,3 +47,4 @@ h2 { font-size: 1.1rem; margin-top: 28px; }
 .tag { font-size: .8rem; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--line); }
 .tag.done { color: var(--ok); } .tag.failed { color: var(--ng); }
 code { font-size: .9em; }
+.copy { width: 100%; font: inherit; font-size: .85rem; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }

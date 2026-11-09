@@ -126,8 +126,10 @@ def similarity(a: str, b: str) -> float:
 # ---------------------------------------------------------------- 原稿全体
 def generate(m: dict[str, Any], cfg: dict[str, Any], rewriter: Callable[[str, str], str] | None = None,
              min_similarity: float = 0.85, only: set[str] | None = None,
-             progress: Callable[[int, int, str], None] | None = None) -> dict[str, int]:
-    """各節の audio_text を埋める。only に節IDを渡すとその節だけ作り直す。"""
+             progress: Callable[[int, int, str], None] | None = None,
+             dictionary: list[dict[str, Any]] | None = None) -> dict[str, int]:
+    """各節の audio_text を埋める。only に節IDを渡すとその節だけ作り直す。
+    dictionary（STEP 5 の読み方辞書）を渡すと、整形の後に読みへ置き換える。"""
     sections = [s for c in m["chapters"] for s in c["sections"] if only is None or s["section_id"] in only]
     stats = {"sections": 0, "llm": 0, "llm_rejected": 0, "llm_failed": 0, "empty": 0}
     for i, s in enumerate(sections, 1):
@@ -152,6 +154,9 @@ def generate(m: dict[str, Any], cfg: dict[str, Any], rewriter: Callable[[str, st
             except Exception as e:  # noqa: BLE001  1節の失敗で全体を止めない
                 stats["llm_failed"] += 1
                 msgs.append(f"script: 生成AIの整形に失敗したためルール整形を使用（{e}）")
+        if dictionary:
+            from .reading_dict import apply
+            text = apply(text, dictionary)
         if text != s.get("audio_text") and s["audio"].get("status") == "done":
             s["audio"]["status"] = "stale"  # 文章が変わったので音声は作り直しが必要
         s["audio_text"] = text

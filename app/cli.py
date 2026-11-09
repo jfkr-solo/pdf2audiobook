@@ -46,6 +46,8 @@ def cmd_extract(cfg, args) -> int:
         prog = lambda i, n: print(f"\r  抽出中 p.{i} ({n}ページ)", end="", file=sys.stderr, flush=True)  # noqa: E731
         if args.ocr_engine:
             cfg.setdefault("extract", {})["ocr_engine"] = args.ocr_engine
+        # クラウドOCRの応答はキャッシュし、再実行で二重に課金されないようにする
+        cfg.setdefault("extract", {}).setdefault("cache_dir", str(bdir / "cache" / "ocr_google"))
         result = extract(str(dst), cfg, rng, progress=prog)
         print(file=sys.stderr)
         result["book_id"] = book_id
@@ -113,7 +115,7 @@ def main(argv=None) -> int:
     p.add_argument("--book-id")
     p.add_argument("--title")
     p.add_argument("--pages", help="対象ページ（例: 1-30）。省略で全ページ")
-    p.add_argument("--ocr-engine", choices=["auto", "ocrmac", "tesseract", "none"], help="config.yaml の設定を上書き")
+    p.add_argument("--ocr-engine", choices=["auto", "google", "ocrmac", "tesseract", "none"], help="config.yaml の設定を上書き")
     p = sub.add_parser("structure", help="STEP 3: 章・節を構造化して manuscript.json を作成")
     p.add_argument("book_id")
     p = sub.add_parser("validate", help="原稿JSONをスキーマ検証")

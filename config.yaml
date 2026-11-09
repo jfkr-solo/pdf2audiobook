@@ -5,7 +5,8 @@ db_path: data/audiobook.db
 extract:
   # 1ページの抽出文字数がこれ未満ならスキャンページとみなしOCRする
   ocr_min_chars: 20
-  # ocr エンジン: auto | ocrmac | tesseract | none
+  # ocr エンジン: auto | google | ocrmac | tesseract | none
+  # google は Google Cloud Vision（.env の GOOGLE_VISION_API_KEY が必要。応答は data/<BOOK>/cache に保存）
   ocr_engine: auto
   ocr_lang: jpn
   # ヘッダー/フッター判定: ページ上端・下端からこの割合の帯

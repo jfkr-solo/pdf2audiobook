@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections import Counter
+from pathlib import Path
 from typing import Any
 
 import pymupdf
@@ -49,8 +50,13 @@ def _page_lines(page: pymupdf.Page, textpage=None) -> list[dict[str, Any]]:
 
 # ---------------------------------------------------------------- OCR
 def _ocr_available(engine: str) -> str | None:
+    import os
     if engine == "none":
         return None
+    if engine == "google":
+        if not os.environ.get("GOOGLE_VISION_API_KEY"):
+            raise RuntimeError("ocr_engine=google には環境変数 GOOGLE_VISION_API_KEY（.env）が必要です")
+        return "google"
     if engine in ("auto", "ocrmac"):
         try:
             import ocrmac  # noqa: F401
@@ -173,6 +179,10 @@ def extract(pdf_path: str, cfg: dict[str, Any] | None = None, pages_range: range
                 if vertical is None:
                     vertical = ocrmod.detect_vertical(page)
                 r = ocrmod.tesseract_page(page, vertical, dpi=ocr_dpi, low_conf=low_conf)
+            elif ocr_engine == "google":
+                import os
+                cache = Path(ecfg["cache_dir"]) / f"p{pno:04d}.json" if ecfg.get("cache_dir") else None
+                r = ocrmod.google_page(page, os.environ["GOOGLE_VISION_API_KEY"], dpi=ocr_dpi, cache_path=cache)
             elif ocr_engine == "ocrmac":
                 r = ocrmod.ocrmac_page(page, dpi=ocr_dpi)
             else:
@@ -218,6 +228,9 @@ def extract(pdf_path: str, cfg: dict[str, Any] | None = None, pages_range: range
         running, printed = None, None
         tables = [f for f in p["figures"] if f["kind"] == "table"]
         for l in p["lines"]:
+            if l.get("is_ruby"):
+                removed.append({"text": l["text"], "reason": "ruby"})
+                continue
             ocr_page = p["method"].startswith("ocr")
             if _in_margin(l["bbox"], p["width"], p["height"], margin_ratio * (1.6 if ocr_page else 1)):
                 t = l["text"]

@@ -72,3 +72,17 @@ python -m app.cli extract 生き方.pdf --book-id BOOK002 --title 生き方 --oc
 python -m app.cli extract 生き方.pdf --book-id BOOK001 --title 生き方 --ocr-engine tesseract --pages 1-20
 python scripts/compare_ocr.py data/BOOK001/pages.json data/BOOK002/pages.json --pages 4,11
 ```
+
+## Google Cloud Vision で OCR する
+
+1. [Google Cloud Console](https://console.cloud.google.com/) でプロジェクトを作り、課金アカウントを紐付ける（毎月 1,000 ページまでは無料枠）
+2. 「APIとサービス」で **Cloud Vision API** を有効化
+3. 「認証情報」で APIキーを作成し、キーの制限で「Cloud Vision API」のみに絞る
+4. `.env` に `GOOGLE_VISION_API_KEY=取得したキー` を書く（Git には入れない）
+
+```bash
+python -m app.cli extract 生き方.pdf --book-id BOOK001 --title 生き方 --ocr-engine google
+python -m app.cli structure BOOK001
+```
+
+応答は `data/<BOOK_ID>/cache/ocr_google/` に保存され、再実行してもAPIは呼ばれません（二重課金なし）。

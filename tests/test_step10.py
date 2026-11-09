@@ -60,3 +60,28 @@ def test_password(book, monkeypatch):
     bad = {"Authorization": "Basic " + base64.b64encode(b"koki:no").decode()}
     assert c.get("/", headers=good).status_code == 200 and c.get("/", headers=bad).status_code == 401
     assert c.get("/healthz").status_code == 200
+
+
+def test_rss_feed_and_token(book, monkeypatch):
+    import xml.etree.ElementTree as ET
+    monkeypatch.setenv("APP_PASSWORD", "pw")
+    monkeypatch.setenv("APP_BASE_URL", "https://example.test")
+    from app.web.main import feed_token
+    t = feed_token("pw")
+    c = TestClient(create_app(book))
+    assert c.get("/feed/BOOK001.xml").status_code == 401
+    assert c.get("/feed/BOOK001.xml?t=wrong").status_code == 401
+    r = c.get(f"/feed/BOOK001.xml?t={t}")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("application/rss+xml")
+    ch = ET.fromstring(r.content).find("channel")
+    items = ch.findall("item")
+    assert ch.findtext("title") == "テスト本" and len(items) == 1  # 音声の無い章は載せない
+    assert items[0].findtext("title") == "第1章 思い"
+    enc = items[0].find("enclosure")
+    assert enc.get("url").startswith("https://example.test/media/BOOK001/") and enc.get("url").endswith(f"?t={t}")
+    assert enc.get("length") == "1024"
+    path = enc.get("url").replace("https://example.test", "")
+    assert c.get(path).status_code == 200  # 合言葉付きの URL なら音声も取れる
+    assert c.get("/books/BOOK001?t=" + t).status_code == 401  # 合言葉は RSS と音声だけ
+    good = {"Authorization": "Basic " + base64.b64encode(b"koki:pw").decode()}
+    assert f"/feed/BOOK001.xml?t={t}" in c.get("/books/BOOK001/status", headers=good).text

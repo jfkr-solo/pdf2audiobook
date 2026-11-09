@@ -15,8 +15,9 @@ PDF教材から、内容を正確に保った日本語オーディオブック�
 | 6 | JSON保存・原文照合の検証 | 完了 |
 | 7 | TTS（Open JTalk / Google / VOICEVOX / say を切り替え） | 完了 |
 | 8 | 結合・MP3（章ごと・全章結合版、音量正規化、ID3タグ） | 完了 |
-| 9 | 音声の品質確認・部分再生成 | 次 |
-| 10〜11 | Web、外部アクセス | 未着手 |
+| 9 | 音声の品質確認・部分再生成 | 完了 |
+| 10 | Web画面・スマホ対応 | 次 |
+| 11 | 自動処理・外部アクセス・RSS | 未着手 |
 
 ## セットアップ（Mac mini）
 
@@ -137,6 +138,22 @@ python -m app.cli build BOOK001 --allow-missing  # 音声の無い節を飛ば�
 - 材料（節の音声・見出し・設定）が変わっていない章は作り直さない。全章結合版は章の MP3 をつなぐだけなので速い
 - 音声の無い節がある章は作らず、`audio_report.md` と章の `audio.error` に理由を残す
 - 間の長さ: 見出しの後 `audio.heading_pause_ms`（章タイトルの後はその2倍）、節の間 `tts.section_pause_ms`、章の間 `tts.chapter_pause_ms`
+
+## STEP 9 の実行方法
+
+```bash
+python -m app.cli audio-check BOOK001               # → audio_check_report.md
+python -m app.cli audio-check BOOK001 --regenerate  # 要作り直しの節だけ合成し直し、章の MP3 をまとめ直す
+python -m app.cli audio-check BOOK001 --mark-stale --include-warnings   # 要確認の節も stale にする（作り直しは tts → build）
+```
+
+- 節ごとの判定:
+  - 話す速さ（読み上げ文の文字数 ÷ 再生時間）が本全体の中央値から外れていないか（`audio_check.rate_warn` / `rate_fail`）
+  - 途中の長い無音（`max_silence_sec`）、末尾の途切れ、音割れ
+  - 無音だけの音声、ファイルが無い、読み上げ文や声の設定が音声を作った後に変わった、stale のまま
+- 章の MP3 と全章結合版: ファイルがあるか、長さが記録と合うか（ffprobe）、章より新しい節の音声が無いか
+- 判定: passed / warning（要確認）/ failed（要作り直し）。failed があると終了コード 1
+- 同じ文章と設定なら同じ音になるエンジン（Open JTalk など）では、作り直しても直らないことがある。そのときは STEP 4〜5 で読み上げ文や辞書を直す
 
 ## 設計上の約束
 

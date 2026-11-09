@@ -86,7 +86,7 @@ def run(m: dict[str, Any], bdir: Path, engine: TTSEngine, settings: dict[str, An
         a = s["audio"]
         h = text_hash(s["audio_text"], settings)
         f = out_dir / f"{s['section_id']}_{h}.wav"
-        if not force and a.get("text_hash") == h and a.get("file") and (bdir / a["file"]).exists():
+        if not force and a.get("status") == "done" and a.get("text_hash") == h and a.get("file") and (bdir / a["file"]).exists():
             stats["reused"] += 1
             continue
         if not force and s["validation"].get("status") == "failed":

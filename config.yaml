@@ -40,3 +40,9 @@ audio:
   read_headings: true    # 章タイトル・節見出しを読み上げる
   heading_pause_ms: 800  # 見出しの後の間（章タイトルの後はこの2倍）
   loudnorm: I=-16:TP=-1.5:LRA=11   # FFmpeg の音量正規化（空にすると行わない）
+
+audio_check:            # STEP 9 の判定のしきい値
+  rate_warn: [0.75, 1.35] # 話す速さ（本全体の中央値との比）がこの外なら要確認
+  rate_fail: [0.5, 2.0]   # この外なら要作り直し
+  max_silence_sec: 3.0
+  silence_db: -50

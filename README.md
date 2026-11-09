@@ -13,8 +13,9 @@ PDF教材から、内容を正確に保った日本語オーディオブック�
 | 4 | 読み上げ用文章の生成（ルール整形＋任意で生成AI） | 完了 |
 | 5 | 読み方辞書 | 完了 |
 | 6 | JSON保存・原文照合の検証 | 完了 |
-| 7 | TTS（say → VOICEVOX） | 次 |
-| 8〜11 | 結合・MP3、品質確認、Web、外部アクセス | 未着手 |
+| 7 | TTS（Open JTalk / Google / VOICEVOX / say を切り替え） | 完了 |
+| 8 | 結合・MP3 | 次 |
+| 9〜11 | 結合・MP3、品質確認、Web、外部アクセス | 未着手 |
 
 ## セットアップ（Mac mini）
 
@@ -99,6 +100,26 @@ python -m app.cli check BOOK001   # → manuscript.json の各節の validation 
 - 章・節の順序: ID の連番、原文ページの逆戻り
 - 判定: passed（95%以上かつ数値一致）/ warning（要確認。数値の不一致、OCRで不確かだった漢字・かなを含む）/ failed（85%未満または空。音声化の前に直す）
 - 要修正の節があると終了コード 1
+
+## STEP 7 の実行方法
+
+```bash
+python -m app.cli tts BOOK001                        # config.yaml の tts.engine で全節を合成
+python -m app.cli tts BOOK001 --limit 2              # 試しに2節だけ
+python -m app.cli tts BOOK001 --engine google        # エンジンを切り替える
+python -m app.cli tts BOOK001 --sections CH001-SEC003 --force
+```
+
+- 節ごとの WAV（16bit・モノラル・24kHz）を `data/<BOOK>/cache/tts/<節ID>_<ハッシュ>.wav` に作る（Git には入れない）
+- 文ごとに合成し、文の間に `sentence_pause_ms` の無音を入れる。長い文は読点で分ける
+- 読み上げ文と声の設定のハッシュが同じなら作り直さない。文章や設定が変わった節だけ作り直し、古い WAV は消す
+- STEP 6 で failed の節は飛ばす（`--force` で作る）。失敗した節は `audio.error` に理由が残る
+- エンジン（`tts.engine`）:
+  - `openjtalk`: 無料・オフライン。Linux のクラウド環境でも動く（`pip install pyopenjtalk-plus`）。声は機械的なので確認用
+  - `google`: Google Cloud Text-to-Speech。`.env` に `GOOGLE_TTS_API_KEY`（Text-to-Speech API を有効にしたキー）
+  - `voicevox`: VOICEVOX エンジン（`tts.voicevox_url`、既定 http://127.0.0.1:50021）。公開時はクレジット表記が必要
+  - `macos_say`: macOS の say コマンド
+- 話者はエンジンごとに `tts.speakers` で指定（`--speaker` で上書き）
 
 ## 設計上の約束
 

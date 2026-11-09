@@ -19,8 +19,12 @@ llm:
   model: claude-haiku-5-5
 
 tts:
-  engine: macos_say     # macos_say | voicevox | google
-  speaker: Kyoko
+  engine: openjtalk     # openjtalk | google | voicevox | macos_say
+  speakers:             # エンジンごとの話者（--speaker で上書き）
+    macos_say: Kyoko
+    voicevox: 13        # 話者のスタイルID（GET /speakers で一覧）
+    google: ja-JP-Neural2-B
+    # openjtalk は話者の選択なし
   speed: 1.0
   pitch: 0.0
   volume: 1.0

@@ -35,7 +35,7 @@ def no_ocr(sample_pdf):
 # ---------------- STEP 1
 def test_config_loads():
     cfg = load_config()
-    assert cfg["tts"]["engine"] in {"macos_say", "voicevox", "google"}
+    assert cfg["tts"]["engine"] in {"openjtalk", "macos_say", "voicevox", "google"}
     assert cfg["extract"]["ocr_min_chars"] > 0
 
 

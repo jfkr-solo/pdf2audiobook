@@ -5,6 +5,7 @@
     python -m app.cli extract path/to/book.pdf [--book-id BOOK001] [--title 書名]
     python -m app.cli structure BOOK001
     python -m app.cli script BOOK001 [--llm anthropic] [--sections CH001-SEC002,...]
+    python -m app.cli dict BOOK001
     python -m app.cli validate data/BOOK001/manuscript.json
 """
 from __future__ import annotations
@@ -96,6 +97,58 @@ def cmd_structure(cfg, args) -> int:
     return 0
 
 
+def _dict_paths(cfg, m, bdir) -> list[Path]:
+    root = Path(cfg["_root"])
+    paths = [root / p for p in m.get("dictionary_files") or ["dictionaries/common.json"]]
+    book = bdir / "dictionary.json"
+    if book not in paths:
+        paths.append(book)  # 教材辞書を最後に（共通辞書より優先）
+    return paths
+
+
+def _dictionary(cfg, m, bdir):
+    from . import reading_dict
+    return reading_dict.load(_dict_paths(cfg, m, bdir))
+
+
+def cmd_dict(cfg, args) -> int:
+    """STEP 5: 辞書を読み上げ文に適用し、残った英字を未登録語として教材辞書に候補を書き足す。"""
+    from . import reading_dict
+
+    bdir = book_dir(cfg, args.book_id)
+    m = manuscript.load(bdir / "manuscript.json")
+    book_dict = bdir / "dictionary.json"
+    entries = _dictionary(cfg, m, bdir)
+    secs = [s for c in m["chapters"] for s in c["sections"]]
+    for s in secs:
+        new = reading_dict.apply(s["audio_text"], entries)
+        if new != s["audio_text"] and s["audio"].get("status") == "done":
+            s["audio"]["status"] = "stale"
+        s["audio_text"] = new
+    unknown = reading_dict.unknown_terms([s["audio_text"] for s in secs])
+    added = []
+    if unknown and not args.no_suggest:
+        added = reading_dict.suggest(book_dict, unknown)
+        entries = _dictionary(cfg, m, bdir)
+        for s in secs:
+            s["audio_text"] = reading_dict.apply(s["audio_text"], entries)
+        unknown = reading_dict.unknown_terms([s["audio_text"] for s in secs])
+    rel = str(book_dict.relative_to(Path(cfg["_root"]))) if book_dict.is_relative_to(Path(cfg["_root"])) else str(book_dict)
+    files = [str(p.relative_to(Path(cfg["_root"]))) if p.is_relative_to(Path(cfg["_root"])) else str(p)
+             for p in _dict_paths(cfg, m, bdir) if p.exists()]
+    m["dictionary_files"] = files or [rel]
+    manuscript.save(m, bdir / "manuscript.json")
+    book_entries = reading_dict.load([book_dict])
+    (bdir / "dictionary_report.md").write_text(
+        reading_dict.report_markdown(m.get("title", ""), unknown, book_entries, book_dict), encoding="utf-8")
+    print(f"辞書 {len(entries)} 語を適用。新しい候補 {len(added)} 語を {book_dict} に追加"
+          f"（確認が必要な自動候補 {sum(1 for e in book_entries if e.get('auto'))} 語）")
+    if unknown:
+        print("読みが決まらず残った英字:", "、".join(f"{t}({n})" for t, n in unknown.most_common(20)))
+    print(f"レポート: {bdir / 'dictionary_report.md'}")
+    return 0
+
+
 def cmd_script(cfg, args) -> int:
     from . import script_gen
 
@@ -109,7 +162,7 @@ def cmd_script(cfg, args) -> int:
     only = set(args.sections.split(",")) if args.sections else None
     prog = lambda i, n, sid: print(f"\r  整形中 {sid} ({i}/{n})", end="", file=sys.stderr, flush=True)  # noqa: E731
     try:
-        stats = script_gen.generate(m, cfg, rewriter, only=only, progress=prog)
+        stats = script_gen.generate(m, cfg, rewriter, only=only, progress=prog, dictionary=_dictionary(cfg, m, bdir))
         print(file=sys.stderr)
         manuscript.save(m, bdir / "manuscript.json")
         (bdir / "script_report.md").write_text(script_gen.report_markdown(m, stats), encoding="utf-8")
@@ -152,11 +205,14 @@ def main(argv=None) -> int:
     p.add_argument("book_id")
     p.add_argument("--llm", choices=["none", "anthropic"], help="config.yaml の llm.provider を上書き")
     p.add_argument("--sections", help="作り直す節ID（カンマ区切り）。省略で全節")
+    p = sub.add_parser("dict", help="STEP 5: 読み方辞書を適用し、未登録語の読み候補を教材辞書に追加")
+    p.add_argument("book_id")
+    p.add_argument("--no-suggest", action="store_true", help="候補を書き足さず、未登録語の一覧だけ出す")
     p = sub.add_parser("validate", help="原稿JSONをスキーマ検証")
     p.add_argument("path")
     args = ap.parse_args(argv)
     cfg = load_config(args.config)
-    return {"init-db": cmd_init_db, "extract": cmd_extract, "structure": cmd_structure, "script": cmd_script, "validate": cmd_validate}[args.cmd](cfg, args)
+    return {"init-db": cmd_init_db, "extract": cmd_extract, "structure": cmd_structure, "script": cmd_script, "dict": cmd_dict, "validate": cmd_validate}[args.cmd](cfg, args)
 
 
 if __name__ == "__main__":

@@ -1,21 +1,109 @@
 {
   "description": "全教材共通の読み方辞書。教材固有の読みは data/<BOOK_ID>/dictionary.json に書き、そちらが優先される。",
   "entries": [
-    {"surface": "TCP/IP", "reading": "ティーシーピー・アイピー"},
-    {"surface": "HTTP", "reading": "エイチティーティーピー"},
-    {"surface": "HTTPS", "reading": "エイチティーティーピーエス"},
-    {"surface": "API", "reading": "エーピーアイ"},
-    {"surface": "JSON", "reading": "ジェイソン"},
-    {"surface": "SQL", "reading": "エスキューエル"},
-    {"surface": "AI", "reading": "エーアイ"},
-    {"surface": "CPU", "reading": "シーピーユー"},
-    {"surface": "OS", "reading": "オーエス"},
-    {"surface": "LAN", "reading": "ラン"},
-    {"surface": "WAN", "reading": "ワン"},
-    {"surface": "DNS", "reading": "ディーエヌエス"},
-    {"surface": "IPv4", "reading": "アイピーブイフォー"},
-    {"surface": "IPv6", "reading": "アイピーブイシックス"},
-    {"surface": "PDF", "reading": "ピーディーエフ"},
-    {"surface": "URL", "reading": "ユーアールエル"}
+    {
+      "surface": "TCP/IP",
+      "reading": "ティーシーピー・アイピー"
+    },
+    {
+      "surface": "HTTP",
+      "reading": "エイチティーティーピー"
+    },
+    {
+      "surface": "HTTPS",
+      "reading": "エイチティーティーピーエス"
+    },
+    {
+      "surface": "API",
+      "reading": "エーピーアイ"
+    },
+    {
+      "surface": "JSON",
+      "reading": "ジェイソン"
+    },
+    {
+      "surface": "SQL",
+      "reading": "エスキューエル"
+    },
+    {
+      "surface": "AI",
+      "reading": "エーアイ"
+    },
+    {
+      "surface": "CPU",
+      "reading": "シーピーユー"
+    },
+    {
+      "surface": "OS",
+      "reading": "オーエス"
+    },
+    {
+      "surface": "LAN",
+      "reading": "ラン"
+    },
+    {
+      "surface": "WAN",
+      "reading": "ワン"
+    },
+    {
+      "surface": "DNS",
+      "reading": "ディーエヌエス"
+    },
+    {
+      "surface": "IPv4",
+      "reading": "アイピーブイフォー"
+    },
+    {
+      "surface": "IPv6",
+      "reading": "アイピーブイシックス"
+    },
+    {
+      "surface": "PDF",
+      "reading": "ピーディーエフ"
+    },
+    {
+      "surface": "URL",
+      "reading": "ユーアールエル"
+    },
+    {
+      "surface": "NTT",
+      "reading": "エヌティーティー"
+    },
+    {
+      "surface": "DNA",
+      "reading": "ディーエヌエー"
+    },
+    {
+      "surface": "GDP",
+      "reading": "ジーディーピー"
+    },
+    {
+      "surface": "EU",
+      "reading": "イーユー"
+    },
+    {
+      "surface": "IBM",
+      "reading": "アイビーエム"
+    },
+    {
+      "surface": "ON",
+      "reading": "オン"
+    },
+    {
+      "surface": "OFF",
+      "reading": "オフ"
+    },
+    {
+      "surface": "IT",
+      "reading": "アイティー"
+    },
+    {
+      "surface": "OK",
+      "reading": "オーケー"
+    },
+    {
+      "surface": "PC",
+      "reading": "ピーシー"
+    }
   ]
 }

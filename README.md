@@ -14,8 +14,9 @@ PDF教材から、内容を正確に保った日本語オーディオブック�
 | 5 | 読み方辞書 | 完了 |
 | 6 | JSON保存・原文照合の検証 | 完了 |
 | 7 | TTS（Open JTalk / Google / VOICEVOX / say を切り替え） | 完了 |
-| 8 | 結合・MP3 | 次 |
-| 9〜11 | 結合・MP3、品質確認、Web、外部アクセス | 未着手 |
+| 8 | 結合・MP3（章ごと・全章結合版、音量正規化、ID3タグ） | 完了 |
+| 9 | 音声の品質確認・部分再生成 | 次 |
+| 10〜11 | Web、外部アクセス | 未着手 |
 
 ## セットアップ（Mac mini）
 
@@ -120,6 +121,22 @@ python -m app.cli tts BOOK001 --sections CH001-SEC003 --force
   - `voicevox`: VOICEVOX エンジン（`tts.voicevox_url`、既定 http://127.0.0.1:50021）。公開時はクレジット表記が必要
   - `macos_say`: macOS の say コマンド
 - 話者はエンジンごとに `tts.speakers` で指定（`--speaker` で上書き）
+
+## STEP 8 の実行方法
+
+```bash
+python -m app.cli build BOOK001                  # 章ごとの MP3 と全章結合版 → data/BOOK001/audio/
+python -m app.cli build BOOK001 --chapters CH002 # その章だけ作り直す（全章結合版は作らない）
+python -m app.cli build BOOK001 --allow-missing  # 音声の無い節を飛ばして作る
+```
+
+- 章ごとに「章タイトル → 節見出し → 本文 …」の順でつなぎ、FFmpeg の loudnorm で音量をそろえて MP3（モノラル、`audio.bitrate`）にする
+- ファイル名は `00_プロローグ.mp3`、`01_第1章 思いを実現させる.mp3` …、`99_全章結合版.mp3`
+- ID3 タグ: タイトル（章名）、アルバム（書名）、トラック番号、コメント（書籍ID・章ID・作成日時）
+- 見出しは STEP 7 と同じ声で読む（`audio.read_headings: false` か `--no-headings` で省略）。見出しの音声も使い回す
+- 材料（節の音声・見出し・設定）が変わっていない章は作り直さない。全章結合版は章の MP3 をつなぐだけなので速い
+- 音声の無い節がある章は作らず、`audio_report.md` と章の `audio.error` に理由を残す
+- 間の長さ: 見出しの後 `audio.heading_pause_ms`（章タイトルの後はその2倍）、節の間 `tts.section_pause_ms`、章の間 `tts.chapter_pause_ms`
 
 ## 設計上の約束
 

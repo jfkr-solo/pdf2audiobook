@@ -8,6 +8,7 @@
     python -m app.cli dict BOOK001
     python -m app.cli check BOOK001
     python -m app.cli tts BOOK001 [--engine voicevox] [--limit 3]
+    python -m app.cli build BOOK001 [--chapters CH001] [--allow-missing]
     python -m app.cli validate data/BOOK001/manuscript.json
 """
 from __future__ import annotations
@@ -231,6 +232,55 @@ def cmd_tts(cfg, args) -> int:
     return 1 if stats["failed"] else 0
 
 
+def cmd_build(cfg, args) -> int:
+    """STEP 8: 節ごとの WAV を章ごとの MP3 と全章結合版にまとめる（data/<BOOK>/audio/）。"""
+    from . import audio, reading_dict
+    from .script_gen import rule_based
+    from .tts import base, synth
+
+    if not audio.ffmpeg_available():
+        print("ffmpeg がありません（brew install ffmpeg / apt install ffmpeg）", file=sys.stderr)
+        return 1
+    bdir = book_dir(cfg, args.book_id)
+    m = manuscript.load(bdir / "manuscript.json")
+    st = audio.build_settings(cfg)
+    if args.no_headings:
+        st["read_headings"] = False
+    engine, voice = None, {}
+    if st["read_headings"]:
+        # 見出しは本文と同じ声で読む（STEP 7 の設定を使う）
+        voice = synth.voice_settings(cfg, (m.get("voice_settings") or {}).get("engine"))
+        if (m.get("voice_settings") or {}).get("speaker"):
+            voice["speaker"] = m["voice_settings"]["speaker"]
+        engine = base.get_engine(voice["engine"], cfg)
+        ok, info = engine.available()
+        if not ok:
+            print(f"見出しを読む TTS エンジン {voice['engine']} が使えません: {info}（--no-headings で省略可）", file=sys.stderr)
+            return 1
+    entries = _dictionary(cfg, m, bdir)
+    speakable = lambda t: reading_dict.apply(rule_based(t), entries)  # noqa: E731
+    only = set(args.chapters.split(",")) if args.chapters else None
+    conn = db.connect(Path(cfg["_root"]) / cfg["db_path"])
+    job = db.start_job(conn, args.book_id, "build")
+    prog = lambda i, n, cid: print(f"\r  書き出し中 {cid} ({i}/{n})", end="", file=sys.stderr, flush=True)  # noqa: E731
+    try:
+        stats = audio.Builder(m, bdir, st, engine, voice, speakable).run(
+            only=only, force=args.force, allow_missing=args.allow_missing, whole=only is None, progress=prog)
+        print(file=sys.stderr)
+    finally:
+        manuscript.save(m, bdir / "manuscript.json")
+    (bdir / "audio_report.md").write_text(audio.report_markdown(m), encoding="utf-8")
+    db.finish_job(conn, job, "failed" if stats["failed"] else "done",
+                  f"built={stats['built']} reused={stats['reused']} failed={stats['failed']} whole={stats['whole']}")
+    print(f"章: 作成 {stats['built']}  再利用 {stats['reused']}  失敗 {stats['failed']}  全章結合版: {stats['whole']}")
+    for c in m["chapters"]:
+        a = c.get("audio") or {}
+        if a.get("status") == "failed":
+            print(f"  失敗 {c['chapter_id']}: {a.get('error')}")
+    print(f"出力: {bdir / 'audio'}  一覧: {bdir / 'audio_report.md'}")
+    return 1 if stats["failed"] or stats["whole"] == "failed" else 0
+
+
 def cmd_validate(cfg, args) -> int:
     errors = manuscript.validate(manuscript.load(args.path))
     if errors:
@@ -271,11 +321,17 @@ def main(argv=None) -> int:
     p.add_argument("--sections", help="作る節ID（カンマ区切り）。省略で全節")
     p.add_argument("--limit", type=int, help="新しく作る節の数の上限（試しに数節だけ作るとき）")
     p.add_argument("--force", action="store_true", help="ハッシュが同じでも作り直す。検証 failed の節も作る")
+    p = sub.add_parser("build", help="STEP 8: 章ごとの MP3 と全章結合版を作成")
+    p.add_argument("book_id")
+    p.add_argument("--chapters", help="作り直す章ID（カンマ区切り）。指定すると全章結合版は作らない")
+    p.add_argument("--allow-missing", action="store_true", help="音声の無い節を飛ばして章を作る")
+    p.add_argument("--no-headings", action="store_true", help="章・節の見出しを読み上げない")
+    p.add_argument("--force", action="store_true", help="変わっていなくても作り直す")
     p = sub.add_parser("validate", help="原稿JSONをスキーマ検証")
     p.add_argument("path")
     args = ap.parse_args(argv)
     cfg = load_config(args.config)
-    return {"init-db": cmd_init_db, "extract": cmd_extract, "structure": cmd_structure, "script": cmd_script, "dict": cmd_dict, "check": cmd_check, "tts": cmd_tts, "validate": cmd_validate}[args.cmd](cfg, args)
+    return {"init-db": cmd_init_db, "extract": cmd_extract, "structure": cmd_structure, "script": cmd_script, "dict": cmd_dict, "check": cmd_check, "tts": cmd_tts, "build": cmd_build, "validate": cmd_validate}[args.cmd](cfg, args)
 
 
 if __name__ == "__main__":

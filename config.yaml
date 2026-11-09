@@ -37,3 +37,6 @@ audio:
   bitrate: 64k
   sample_rate: 24000
   channels: 1
+  read_headings: true    # 章タイトル・節見出しを読み上げる
+  heading_pause_ms: 800  # 見出しの後の間（章タイトルの後はこの2倍）
+  loudnorm: I=-16:TP=-1.5:LRA=11   # FFmpeg の音量正規化（空にすると行わない）

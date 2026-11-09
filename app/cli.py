@@ -9,6 +9,7 @@
     python -m app.cli check BOOK001
     python -m app.cli tts BOOK001 [--engine voicevox] [--limit 3]
     python -m app.cli build BOOK001 [--chapters CH001] [--allow-missing]
+    python -m app.cli audio-check BOOK001 [--mark-stale] [--regenerate]
     python -m app.cli validate data/BOOK001/manuscript.json
 """
 from __future__ import annotations
@@ -281,6 +282,47 @@ def cmd_build(cfg, args) -> int:
     return 1 if stats["failed"] or stats["whole"] == "failed" else 0
 
 
+def cmd_audio_check(cfg, args) -> int:
+    """STEP 9: 節の音声と章の MP3 を確かめる。--regenerate で問題の節だけ作り直して章をまとめ直す。"""
+    from . import audio_check
+    from .tts import synth
+
+    bdir = book_dir(cfg, args.book_id)
+    m = manuscript.load(bdir / "manuscript.json")
+    st = audio_check.settings(cfg)
+    vs = m.get("voice_settings") or {}
+    voice = synth.voice_settings(cfg, vs.get("engine"))
+    if vs.get("speaker"):
+        voice["speaker"] = vs["speaker"]
+    rows = audio_check.check_sections(m, bdir, st, voice)
+    notes = audio_check.check_files(m, bdir)
+    (bdir / "audio_check_report.md").write_text(audio_check.report_markdown(m, rows, notes), encoding="utf-8")
+    cnt = {k: sum(r["status"] == k for r in rows) for k in ("passed", "warning", "failed", "not_started")}
+    print(f"問題なし {cnt['passed']}  要確認 {cnt['warning']}  要作り直し {cnt['failed']}  音声なし {cnt['not_started']}  "
+          f"章の指摘 {len(notes)}")
+    for r in rows:
+        if r["status"] in ("failed", "warning"):
+            print(f"  {r['status']:7s} {r['section_id']}: {' / '.join(r['messages'])}")
+    for n in notes:
+        print(f"  章: {n}")
+    print(f"レポート: {bdir / 'audio_check_report.md'}")
+    want = {"failed", "warning"} if args.include_warnings else {"failed"}
+    bad = {r["section_id"] for r in rows if r["status"] in want}
+    if (args.mark_stale or args.regenerate) and bad:
+        n = audio_check.mark_stale(m, bad)
+        print(f"作り直す節: {len(bad)}（新たに stale にした節 {n}）")
+        manuscript.save(m, bdir / "manuscript.json")
+    if args.regenerate:
+        if bad:
+            ns = argparse.Namespace(book_id=args.book_id, engine=vs.get("engine"), speaker=vs.get("speaker"),
+                                    sections=",".join(sorted(bad)), limit=None, force=False)
+            if cmd_tts(cfg, ns):
+                return 1
+        ns = argparse.Namespace(book_id=args.book_id, chapters=None, allow_missing=False, no_headings=False, force=False)
+        return cmd_build(cfg, ns)
+    return 1 if cnt["failed"] or notes else 0
+
+
 def cmd_validate(cfg, args) -> int:
     errors = manuscript.validate(manuscript.load(args.path))
     if errors:
@@ -327,11 +369,16 @@ def main(argv=None) -> int:
     p.add_argument("--allow-missing", action="store_true", help="音声の無い節を飛ばして章を作る")
     p.add_argument("--no-headings", action="store_true", help="章・節の見出しを読み上げない")
     p.add_argument("--force", action="store_true", help="変わっていなくても作り直す")
+    p = sub.add_parser("audio-check", help="STEP 9: 音声の品質確認（話す速さ・無音・途切れ・章の MP3）")
+    p.add_argument("book_id")
+    p.add_argument("--mark-stale", action="store_true", help="要作り直しの節を stale にする")
+    p.add_argument("--include-warnings", action="store_true", help="要確認の節も対象にする")
+    p.add_argument("--regenerate", action="store_true", help="対象の節を作り直し、章の MP3 をまとめ直す")
     p = sub.add_parser("validate", help="原稿JSONをスキーマ検証")
     p.add_argument("path")
     args = ap.parse_args(argv)
     cfg = load_config(args.config)
-    return {"init-db": cmd_init_db, "extract": cmd_extract, "structure": cmd_structure, "script": cmd_script, "dict": cmd_dict, "check": cmd_check, "tts": cmd_tts, "build": cmd_build, "validate": cmd_validate}[args.cmd](cfg, args)
+    return {"init-db": cmd_init_db, "extract": cmd_extract, "structure": cmd_structure, "script": cmd_script, "dict": cmd_dict, "check": cmd_check, "tts": cmd_tts, "build": cmd_build, "audio-check": cmd_audio_check, "validate": cmd_validate}[args.cmd](cfg, args)
 
 
 if __name__ == "__main__":

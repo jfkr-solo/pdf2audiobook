@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}処理状況 - {{ b.title }}{% endblock %}
+{% block nav %}<a href="/books/{{ b.id }}" class="nav">再生</a>{% endblock %}
+{% block main %}
+<h1>処理状況</h1>
+<p class="muted">{{ b.title }}（{{ b.id }}）· 節 {{ b.status.sections }} · 声 {{ b.voice or "未設定" }}</p>
+<table class="stats">
+  <tr><th>原文との照合</th><td>問題なし {{ b.status.text.passed }}</td><td>要確認 {{ b.status.text.warning }}</td><td>要修正 {{ b.status.text.failed }}</td></tr>
+  <tr><th>節の音声</th><td>完成 {{ b.status.audio.done }}</td><td>作り直し待ち {{ b.status.audio.stale }}</td><td>失敗 {{ b.status.audio.failed }}</td></tr>
+  <tr><th>章の MP3</th><td colspan="3">{{ b.playable }} / {{ b.chapters|length }} 章</td></tr>
+</table>
+{% if reports %}<h2>レポート</h2><ul>{% for r in reports %}<li><code>{{ r }}</code></li>{% endfor %}</ul>{% endif %}
+<h2>処理の履歴</h2>
+{% if jobs %}
+<ul class="jobs">{% for j in jobs %}<li><b>{{ j.step }}</b> <span class="tag {{ j.status }}">{{ j.status }}</span> <span class="muted">{{ j.started_at }}</span>{% if j.message %}<br><span class="muted small">{{ j.message }}</span>{% endif %}</li>{% endfor %}</ul>
+{% else %}<p class="muted">履歴はありません。</p>{% endif %}
+{% endblock %}

@@ -249,6 +249,10 @@ def extract(pdf_path: str, cfg: dict[str, Any] | None = None, pages_range: range
             if in_margin:
                 t = l["text"]
                 if _norm_margin(t) in repeated or PAGE_NUM_RE.match(t):
+                    # ページ番号だけの行（Google Vision は柱と別の行に読む）からもノンブルを取る
+                    num = printed_page_number(t) if ocr_page else None
+                    if num and printed is None:
+                        printed = num
                     removed.append({"text": t, "reason": "header_footer"})
                     continue
                 if p["method"].startswith("ocr"):

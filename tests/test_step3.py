@@ -78,3 +78,31 @@ def test_vertical_heading_detected_by_position():
     assert _is_heading(second, body, True, base, True)
     assert not _is_heading(body_line, body, True, base, True)
     assert not _is_heading(sentence, body, True, base, True)
+
+
+def _scan(nums):
+    """見開きが入れ替わったスキャンを模した pages（printed_page と本文だけ）。"""
+    return [{"page": i + 1, "printed_page": n, "text": f"本文{i}", "method": "ocr:google", "lines": []}
+            for i, n in enumerate(nums)]
+
+
+def test_order_pages_repairs_misread_page_numbers():
+    # 正しくは 213,212,215,214,... の順でスキャンされている（見開きの入れ替わり）
+    truth = [211, 210, 213, 212, 215, 214, 217, 216, 219, 218, 221, 220, 223, 222]
+    nums = list(truth)
+    nums[2] = 23      # 二一三 → 「二三」（「一」の欠け）
+    nums[5] = 2114    # 余分な桁
+    nums[6] = 2117    # 二一七 → 「一一一七」→「2117」（二と一一の取り違え）
+    nums[9] = None    # 読めない
+    ordered, notes = order_pages(_scan(nums))
+    assert [p["book_page"] for p in ordered] == sorted(truth)
+    assert any("誤読" in n for n in notes)
+
+
+def test_order_pages_unread_page_follows_its_spread_partner():
+    # 章扉の前後でずれ幅が変わる区間。読めないページ（index 3）は隣のページと番号が1違いになるよう置く
+    nums = [119, 118, 121, None, 123, None, None, 127, 126, 129, 128]
+    ordered, _ = order_pages(_scan(nums))
+    keys = {p["page"]: p["book_page"] for p in ordered}
+    assert keys[4] == 120
+    assert [p["page"] for p in ordered][:4] == [2, 1, 4, 3]

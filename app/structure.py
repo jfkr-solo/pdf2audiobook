@@ -55,10 +55,69 @@ def order_pages(pages: list[dict]) -> tuple[list[dict], list[str]]:
                 return votes.most_common(1)[0][0]
         return None
 
+    def _subseq(short: str, long: str) -> bool:
+        it = iter(long)
+        return all(c in it for c in short)
+
+    def repair(i: int, n: int) -> int | None:
+        """誤読したノンブル（例: 二一三→「23」）を、近傍のずれ幅から作った候補のうち
+        読めた数字を順に含むものに直す。候補が一つに決まらなければ None。"""
+        votes = Counter()
+        for j, o in good.items():
+            if j % 2 == i % 2 and abs(j - i) <= 16:
+                votes[o] += 1.0 / (1 + abs(j - i))
+        # 縦書きの漢数字は「一一」と「二」を取り違えやすい（一一八→「二八」、一一二→「一一一一」）
+        raw = str(n)
+        variants = {raw}
+        for a, b in (("2", "11"), ("11", "2")):
+            for k in range(len(raw)):
+                if raw.startswith(a, k):
+                    variants.add(raw[:k] + b + raw[k + len(a):])
+        exact = [(w, o) for o, w in votes.items() if str(i + o) in variants]
+        fits = exact or [(w, o) for o, w in votes.items() if any(_subseq(v, str(i + o)) for v in variants)]
+        if not fits:
+            return None
+        fits.sort(reverse=True)
+        return i + fits[0][1]
+
+    # 直せた誤読は確かな値として近傍の判定にも使う（誤読が続く区間で、離れたページの値に引きずられないように）
+    repaired = {i: f - i for i, n in enumerate(nums) if i not in good and n is not None
+                and (f := repair(i, n)) is not None}
+    good.update(repaired)
+
+    taken = {i + o for i, o in good.items()}
+
+    def place(i: int) -> int | None:
+        """ノンブルが読めないページの位置。見開きが入れ替わっている本では、章扉の前後で
+        ずれ幅が変わり近傍の多数決が割れる。そのときは、PDF上の隣のページと番号が1違いになり、
+        まだ使われていない番号を優先する。"""
+        base = local_offset(i)
+        neigh = [j + good[j] for j in (i - 1, i + 1) if j in good]
+        if base is None or not neigh:
+            return base
+        def ok(o: int) -> bool:
+            k = i + o
+            return any(abs(k - n) == 1 for n in neigh) and k not in taken
+        if ok(base):
+            return base
+        for window in (8, 16):
+            votes = Counter()
+            for j, o in good.items():
+                if j % 2 == i % 2 and abs(j - i) <= window:
+                    votes[o] += 1.0 / (1 + abs(j - i))
+            if votes:
+                alts = [o for o in votes if ok(o) and votes[o] >= votes[base] * 0.5]
+                if alts:
+                    return max(alts, key=lambda o: votes[o])
+                break
+        return base
+
     keyed = []
     for i, p in enumerate(pages):
-        off = None if i in good else local_offset(i)
-        if i in good:
+        off = None
+        if i not in good or i in repaired:
+            off = repaired[i] if i in repaired else place(i)
+        if i in good and i not in repaired:
             # 自分の読み取り値と近傍の多数派が食い違うなら近傍を優先
             neigh = local_offset(i)
             key = nums[i] if neigh is None else i + neigh
@@ -127,9 +186,10 @@ def _is_heading(line: dict, body: float, is_ocr: bool, base: float | None = None
         return False
     # 縦書きの見出しは本文の行頭より上（天）にはみ出して組まれることが多い。
     # OCRエンジンによって文字サイズの測り方が違い大きさだけでは拾えないため、位置でも判定する。
-    # 2行見出しの1行目は「、」、2行目は「」」で終わることがあるので句読点の除外より先に見る
+    # 2行見出しの1行目は「、」、2行目は「」」で終わることがあるので句読点の除外より先に見る。
+    # 1行目は本文よりやや小さい文字で組まれることがあるので大きさの条件はゆるめる
     if vertical and base is not None and line["bbox"][1] < base - body * 1.5 \
-            and line["size"] >= body and not t.endswith("。"):
+            and line["size"] >= body * 0.9 and not t.endswith("。"):
         return True
     if t.endswith(END_PUNCT):
         return False

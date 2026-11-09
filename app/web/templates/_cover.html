@@ -1,0 +1,5 @@
+{# 表紙。data/<本>/cover.jpg があればそれを、無ければ書名から作った表紙を出す #}
+{% if b.cover %}<img class="cover {{ size }}" src="/cover/{{ b.id }}" alt="{{ b.title }} の表紙">
+{% else %}<div class="cover {{ size }} gen" style="--h: {{ b.hue }}" role="img" aria-label="{{ b.title }} の表紙">
+  <span class="gen-title">{{ b.title }}</span>{% if b.author %}<span class="gen-author">{{ b.author }}</span>{% endif %}
+</div>{% endif %}

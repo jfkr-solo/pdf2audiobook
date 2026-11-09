@@ -35,13 +35,22 @@ def book(tmp_path):
 def test_pages(book):
     c = TestClient(create_app(book))
     r = c.get("/")
-    assert r.status_code == 200 and "テスト本" in r.text and "1/2 章" in r.text and "1時間02分" in r.text
+    assert r.status_code == 200 and "テスト本" in r.text and "1章" in r.text and "1時間02分" in r.text
+    assert "gen-title" in r.text and "続きを聞く" in r.text  # 表紙画像が無いときは書名から作った表紙
     r = c.get("/books/BOOK001")
     assert r.status_code == 200 and "第1章 思い" in r.text and "音声なし" in r.text
     assert 'data-file="01_第1章 思い.mp3"' in r.text
     r = c.get("/books/BOOK001/status")
     assert r.status_code == 200 and "問題なし 2" in r.text and "1 / 2 章" in r.text
     assert c.get("/books/BOOK999").status_code == 404 and c.get("/books/..%2F..").status_code == 404
+
+
+def test_cover_image_when_present(book, tmp_path):
+    c = TestClient(create_app(book))
+    assert c.get("/cover/BOOK001").status_code == 404
+    (tmp_path / "data" / "BOOK001" / "cover.jpg").write_bytes(b"\xff\xd8jpg")
+    assert c.get("/cover/BOOK001").content == b"\xff\xd8jpg"
+    assert 'src="/cover/BOOK001"' in c.get("/").text
 
 
 def test_media_supports_range_and_blocks_traversal(book):

@@ -1,26 +1,47 @@
 {% extends "base.html" %}
+{% block bodyclass %}library{% endblock %}
 {% block main %}
-<h1>本の一覧</h1>
+<h1 class="lib-title">ライブラリ</h1>
+
+<section class="hero" id="hero" hidden>
+  <p class="eyebrow">続きを聞く</p>
+  <a class="hero-card" id="hero-link" href="#">
+    <div id="hero-cover"></div>
+    <div class="hero-body">
+      <span class="hero-book" id="hero-book"></span>
+      <span class="hero-chapter muted" id="hero-chapter"></span>
+      <span class="bar"><span id="hero-bar"></span></span>
+      <span class="muted small" id="hero-left"></span>
+    </div>
+    <span class="hero-play" aria-hidden="true">▶</span>
+  </a>
+</section>
+
+<div class="chips" role="tablist" aria-label="絞り込み">
+  <button class="chip on" data-filter="all" role="tab" aria-selected="true">すべて</button>
+  <button class="chip" data-filter="progress" role="tab">聞いている途中</button>
+  <button class="chip" data-filter="new" role="tab">未再生</button>
+  <button class="chip" data-filter="done" role="tab">聞き終わった</button>
+</div>
+
 {% if not books %}<p class="muted">まだ本がありません。<code>python -m app.cli extract</code> から始めてください。</p>{% endif %}
-<ul class="cards">
+<ul class="shelf">
 {% for b in books %}
-  <li class="card">
-    <a href="/books/{{ b.id }}" class="card-link">
-      <span class="card-title">{{ b.title }}</span>
-      <span class="muted">{% if b.author %}{{ b.author }} · {% endif %}{{ b.playable }}/{{ b.chapters|length }} 章 · {{ b.total_text }}</span>
-      <span class="resume muted" data-book="{{ b.id }}"></span>
+  <li class="title-row" data-book="{{ b.id }}" data-total="{{ b.total }}" data-files='{{ b.files|tojson }}'>
+    <a href="/books/{{ b.id }}" class="row-link">
+      {% with size="thumb" %}{% include "_cover.html" %}{% endwith %}
+      <div class="row-body">
+        <span class="row-title">{{ b.title }}</span>
+        {% if b.author %}<span class="muted small">{{ b.author }}</span>{% endif %}
+        <span class="bar"><span class="fill"></span></span>
+        <span class="row-meta small muted"><span class="left">{{ b.total_text }}</span> · {{ b.playable }}章</span>
+      </div>
     </a>
+    <template class="cover-tpl">{% with size="hero-size" %}{% include "_cover.html" %}{% endwith %}</template>
   </li>
 {% endfor %}
 </ul>
 {% endblock %}
 {% block scripts %}
-<script>
-document.querySelectorAll(".resume").forEach(el => {
-  try {
-    const s = JSON.parse(localStorage.getItem("pos:" + el.dataset.book) || "null");
-    if (s && s.title) el.textContent = "続き: " + s.title;
-  } catch (e) {}
-});
-</script>
+<script src="{{ url_for('static', path='library.js') }}"></script>
 {% endblock %}

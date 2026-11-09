@@ -55,6 +55,7 @@ def summarize(m: dict[str, Any], bdir: Path) -> dict[str, Any]:
                          "duration": a.get("duration_sec"), "duration_text": fmt_duration(a.get("duration_sec"))})
     secs = [s for c in m["chapters"] for s in c["sections"]]
     count = lambda key, val: sum((s.get(key) or {}).get("status") == val for s in secs)  # noqa: E731
+    cover = next((f.name for f in (bdir / "cover.jpg", bdir / "cover.png") if f.exists()), None)
     whole = m.get("audio") or {}
     playable = [c for c in chapters if c["file"]]
     total = sum(c["duration"] or 0 for c in playable)
@@ -63,6 +64,10 @@ def summarize(m: dict[str, Any], bdir: Path) -> dict[str, Any]:
         "chapters": chapters, "playable": len(playable), "total_text": fmt_duration(total),
         "whole_file": Path(whole["file"]).name if whole.get("status") == "done" and whole.get("file") else None,
         "voice": (m.get("voice_settings") or {}).get("engine", ""),
+        "cover": cover,
+        "hue": int(hashlib.md5(m["book_id"].encode()).hexdigest()[:4], 16) % 360,  # 表紙画像が無いときの色
+        "total": total,
+        "files": [{"file": c["file"], "title": c["title"], "duration": c["duration"] or 0} for c in playable],
         "status": {
             "sections": len(secs),
             "text": {k: count("validation", k) for k in ("passed", "warning", "failed", "pending")},
@@ -199,6 +204,13 @@ def create_app(cfg: dict[str, Any] | None = None) -> FastAPI:
         _, bdir = book_or_404(book_id)
         m = json.loads((bdir / "manuscript.json").read_text(encoding="utf-8"))
         return Response(rss_xml(m, bdir, public_base(request), token), media_type="application/rss+xml; charset=utf-8")
+
+    @app.get("/cover/{book_id}")
+    def cover(book_id: str):
+        b, bdir = book_or_404(book_id)
+        if not b["cover"]:
+            raise HTTPException(404)
+        return FileResponse(bdir / b["cover"])
 
     @app.get("/media/{book_id}/{name}")
     def media(book_id: str, name: str):

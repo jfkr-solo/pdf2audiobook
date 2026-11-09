@@ -9,7 +9,7 @@
 <title>{% block title %}オーディオブック{% endblock %}</title>
 <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
 </head>
-<body>
+<body class="{% block bodyclass %}{% endblock %}">
 <header class="top"><a href="/" class="brand">オーディオブック</a>{% block nav %}{% endblock %}</header>
 <main>{% block main %}{% endblock %}</main>
 {% block scripts %}{% endblock %}

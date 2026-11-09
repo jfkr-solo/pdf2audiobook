@@ -18,6 +18,14 @@ if ! gcloud storage buckets describe "gs://$BUCKET" >/dev/null 2>&1; then
   gcloud storage buckets create "gs://$BUCKET" --location="$REGION" --uniform-bucket-level-access --public-access-prevention
 fi
 
+# 新しいプロジェクトでは既定のサービスアカウントに権限が無いので付ける（何度実行しても同じ結果）
+NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+SA="${NUMBER}-compute@developer.gserviceaccount.com"
+gcloud projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:$SA" \
+  --role=roles/run.builder --condition=None >/dev/null          # ソースからのビルド
+gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member="serviceAccount:$SA" \
+  --role=roles/storage.objectViewer >/dev/null                  # Web 画面がバケットの音声を読む
+
 if [ -z "${APP_PASSWORD:-}" ]; then
   read -r -s -p "Web 画面のパスワードを決めて入力してください: " APP_PASSWORD; echo
 fi

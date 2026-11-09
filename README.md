@@ -161,7 +161,7 @@ python -m app.cli audio-check BOOK001 --mark-stale --include-warnings   # 要確
 APP_PASSWORD=好きなパスワード uvicorn app.web.main:create_app --factory --host 0.0.0.0 --port 8000
 ```
 
-- `/`: 本の一覧（続きの章も表示）。`/books/BOOK001`: 章を選んで再生。`/books/BOOK001/status`: 処理状況と履歴
+- `/`: ライブラリ（表紙、聞いた割合と残り時間、「続きを聞く」、すべて／途中／未再生／聞き終わった の絞り込み）。表紙は `data/<本>/cover.jpg`（または .png）を置くとそれを使い、無ければ書名から作る。`/books/BOOK001`: 章を選んで再生。`/books/BOOK001/status`: 処理状況と履歴
 - 続きから再生: 章ごとの再生位置と速さを、その端末のブラウザに保存する
 - 再生速度 1.0〜2.0 倍、15秒戻る・30秒進む、章が終わると次の章へ。ロック画面からも操作できる（Media Session）
 - 音声は `/media/<本>/<ファイル>` からシークできる形（Range 対応）で配信。`audio/` の MP3 以外は返さない

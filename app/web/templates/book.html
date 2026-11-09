@@ -2,8 +2,13 @@
 {% block title %}{{ b.title }}{% endblock %}
 {% block nav %}<a href="/books/{{ b.id }}/status" class="nav">処理状況</a>{% endblock %}
 {% block main %}
-<h1>{{ b.title }}</h1>
-<p class="muted">{% if b.author %}{{ b.author }} · {% endif %}{{ b.total_text }}</p>
+<div class="book-head">
+  {% with size="big" %}{% include "_cover.html" %}{% endwith %}
+  <div>
+    <h1>{{ b.title }}</h1>
+    <p class="muted" style="margin:0">{% if b.author %}{{ b.author }} · {% endif %}{{ b.total_text }} · {{ b.playable }}章</p>
+  </div>
+</div>
 
 <section class="player" id="player" hidden>
   <div class="now" id="now">章を選んでください</div>

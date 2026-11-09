@@ -29,7 +29,7 @@
     const t = chapterTimes();
     t[current.file] = { t: audio.currentTime, done: !!done };
     store.set("times:" + book.id, t);
-    store.set(posKey, { file: current.file, title: current.title, t: audio.currentTime });
+    store.set(posKey, { file: current.file, title: current.title, t: audio.currentTime, at: Date.now() });
   }
   function load(btn, autoplay, at) {
     document.querySelectorAll(".chapter.playing").forEach((b) => b.classList.remove("playing"));

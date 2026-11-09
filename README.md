@@ -10,8 +10,9 @@ PDF教材から、内容を正確に保った日本語オーディオブック�
 | 1 | 骨格・設定・JSON Schema・SQLite | 完了 |
 | 2 | PDFテキスト抽出・OCR（縦書き対応）・ヘッダー/フッター除去・図表検出 | 完了 |
 | 3 | 章・節の構造化（ページ順補正・重複スキャン除去・柱から章検出） | 完了 |
-| 4 | 読み上げ用文章の生成 | 次 |
-| 5〜11 | 辞書、TTS、結合、検証、Web、外部アクセス | 未着手 |
+| 4 | 読み上げ用文章の生成（ルール整形＋任意で生成AI） | 完了 |
+| 5 | 読み方辞書 | 次 |
+| 6〜11 | 検証、TTS、結合、品質確認、Web、外部アクセス | 未着手 |
 
 ## セットアップ（Mac mini）
 
@@ -56,6 +57,21 @@ python -m app.cli validate data/BOOK001/manuscript.json
 
 - `manuscript.json`: 章・節ごとの原文（`original_text`）。`audio_text` は STEP 4 で埋める
 - `structure_report.md`: 章・節の一覧、字数、読み上げ時間の目安、ページ順の補正や除外したノイズの記録
+
+## STEP 4 の実行方法
+
+```bash
+python -m app.cli script BOOK001                         # ルール整形のみ（APIキー不要）
+python -m app.cli script BOOK001 --llm anthropic         # 生成AIでも整形（.env に ANTHROPIC_API_KEY、pip install anthropic）
+python -m app.cli script BOOK001 --sections CH002-SEC003 # 指定した節だけ作り直す
+```
+
+- `manuscript.json` の各節に `audio_text` を書き込み、`script_report.md` に節ごとの字数と整形で変わった箇所の例を出す
+- ルール整形: 漢数字の数値（一九九七年→1997年、一〇〇点→100点。「四六時中」などの語は変えない）、
+  ダッシュ・三点リーダ→読点、〝〟や " → 「」、丸数字→「一つ目、」、×→かける、=→イコール、括弧→前後に間、OCRのゴミ記号を除去
+- 生成AI整形は内容を削らない指示で行い、原文との一致率が 85% 未満なら採用せずルール整形に戻す（理由は節の `validation.messages` に記録）
+- 文章が変わった節の音声は `stale` になり、STEP 7 で作り直される
+- 英字・略語の読み（DDI など）は STEP 5 の辞書で扱う
 
 ## 設計上の約束
 

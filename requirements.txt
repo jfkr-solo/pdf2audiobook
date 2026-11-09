@@ -6,3 +6,5 @@ pytest>=8.0
 # OCR（どちらか。Macなら ocrmac 推奨）
 # ocrmac>=1.0        ; sys_platform == "darwin"
 # pytesseract>=0.3   # 要 brew install tesseract tesseract-lang
+# 生成AIで読み上げ文を整形する場合（llm.provider: anthropic）
+# anthropic>=1.0

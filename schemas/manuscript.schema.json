@@ -37,7 +37,7 @@
       "type": "object",
       "required": ["engine"],
       "properties": {
-        "engine": {"enum": ["macos_say", "voicevox", "google", "azure", "openai"]},
+        "engine": {"enum": ["openjtalk", "macos_say", "voicevox", "google", "azure", "openai"]},
         "speaker": {"type": "string"},
         "speed": {"type": "number", "minimum": 0.5, "maximum": 2.0},
         "pitch": {"type": "number", "minimum": -1.0, "maximum": 1.0},

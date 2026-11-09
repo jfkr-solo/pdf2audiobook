@@ -7,6 +7,7 @@
     python -m app.cli script BOOK001 [--llm anthropic] [--sections CH001-SEC002,...]
     python -m app.cli dict BOOK001
     python -m app.cli check BOOK001
+    python -m app.cli tts BOOK001 [--engine voicevox] [--limit 3]
     python -m app.cli validate data/BOOK001/manuscript.json
 """
 from __future__ import annotations
@@ -196,6 +197,40 @@ def cmd_check(cfg, args) -> int:
     return 1 if errors or st.get("failed") else 0
 
 
+def cmd_tts(cfg, args) -> int:
+    """STEP 7: 節ごとの WAV を data/<BOOK>/cache/tts/ に作る。"""
+    from .tts import base, synth
+
+    bdir = book_dir(cfg, args.book_id)
+    m = manuscript.load(bdir / "manuscript.json")
+    settings = synth.voice_settings(cfg, args.engine)
+    if args.speaker:
+        settings["speaker"] = args.speaker
+    engine = base.get_engine(settings["engine"], cfg)
+    ok, info = engine.available()
+    if not ok:
+        print(f"TTS エンジン {settings['engine']} が使えません: {info}", file=sys.stderr)
+        return 1
+    only = set(args.sections.split(",")) if args.sections else None
+    conn = db.connect(Path(cfg["_root"]) / cfg["db_path"])
+    job = db.start_job(conn, args.book_id, "tts")
+    prog = lambda i, n, sid: print(f"\r  合成中 {sid} ({i}/{n})", end="", file=sys.stderr, flush=True)  # noqa: E731
+    try:
+        stats = synth.run(m, bdir, engine, settings, only=only, force=args.force, limit=args.limit, progress=prog)
+        print(file=sys.stderr)
+    finally:
+        manuscript.save(m, bdir / "manuscript.json")  # 途中で止めても、できた節の記録は残す
+    db.finish_job(conn, job, "failed" if stats["failed"] else "done", " ".join(f"{k}={v}" for k, v in stats.items()))
+    total = sum(s["audio"].get("duration_sec") or 0 for c in m["chapters"] for s in c["sections"])
+    print(f"エンジン {settings['engine']}（{settings.get('speaker', '既定')}）: 作成 {stats['done']}  再利用 {stats['reused']}  "
+          f"検証NGで省略 {stats['skipped']}  失敗 {stats['failed']}  合計 {total / 60:.1f} 分")
+    for c in m["chapters"]:
+        for s in c["sections"]:
+            if s["audio"].get("status") == "failed" and s["audio"].get("error"):
+                print(f"  失敗 {s['section_id']}: {s['audio']['error']}")
+    return 1 if stats["failed"] else 0
+
+
 def cmd_validate(cfg, args) -> int:
     errors = manuscript.validate(manuscript.load(args.path))
     if errors:
@@ -229,11 +264,18 @@ def main(argv=None) -> int:
     p.add_argument("--no-suggest", action="store_true", help="候補を書き足さず、未登録語の一覧だけ出す")
     p = sub.add_parser("check", help="STEP 6: 読み上げ文を原文と照合（文字カバー率・数値・順序）")
     p.add_argument("book_id")
+    p = sub.add_parser("tts", help="STEP 7: 節ごとの音声（WAV）を作成")
+    p.add_argument("book_id")
+    p.add_argument("--engine", choices=["openjtalk", "google", "voicevox", "macos_say"], help="config.yaml の tts.engine を上書き")
+    p.add_argument("--speaker", help="話者（say: Kyoko など / VOICEVOX: スタイルID / Google: 音声名）")
+    p.add_argument("--sections", help="作る節ID（カンマ区切り）。省略で全節")
+    p.add_argument("--limit", type=int, help="新しく作る節の数の上限（試しに数節だけ作るとき）")
+    p.add_argument("--force", action="store_true", help="ハッシュが同じでも作り直す。検証 failed の節も作る")
     p = sub.add_parser("validate", help="原稿JSONをスキーマ検証")
     p.add_argument("path")
     args = ap.parse_args(argv)
     cfg = load_config(args.config)
-    return {"init-db": cmd_init_db, "extract": cmd_extract, "structure": cmd_structure, "script": cmd_script, "dict": cmd_dict, "check": cmd_check, "validate": cmd_validate}[args.cmd](cfg, args)
+    return {"init-db": cmd_init_db, "extract": cmd_extract, "structure": cmd_structure, "script": cmd_script, "dict": cmd_dict, "check": cmd_check, "tts": cmd_tts, "validate": cmd_validate}[args.cmd](cfg, args)
 
 
 if __name__ == "__main__":

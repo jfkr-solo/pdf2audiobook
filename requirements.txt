@@ -8,3 +8,5 @@ pytest>=8.0
 # pytesseract>=0.3   # 要 brew install tesseract tesseract-lang
 # 生成AIで読み上げ文を整形する場合（llm.provider: anthropic）
 # anthropic>=1.0
+# 音声合成（tts.engine: openjtalk。クラウドの Linux でも動く）
+pyopenjtalk-plus>=0.4

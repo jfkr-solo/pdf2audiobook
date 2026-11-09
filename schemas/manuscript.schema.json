@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/pdf2audiobook/manuscript.schema.json",
+  "title": "読み上げ原稿",
+  "type": "object",
+  "required": ["schema_version", "book_id", "title", "language", "chapters"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "book_id": {"type": "string", "pattern": "^BOOK[0-9]{3,}$"},
+    "title": {"type": "string", "minLength": 1},
+    "author": {"type": ["string", "null"]},
+    "language": {"type": "string", "pattern": "^[a-z]{2}-[A-Z]{2}$"},
+    "source_pdf": {"type": "string"},
+    "page_count": {"type": "integer", "minimum": 0},
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "voice_settings": {"$ref": "#/$defs/voice_settings"},
+    "dictionary_files": {"type": "array", "items": {"type": "string"}},
+    "front_matter": {"$ref": "#/$defs/section"},
+    "chapters": {"type": "array", "items": {"$ref": "#/$defs/chapter"}},
+    "audio": {"$ref": "#/$defs/audio"}
+  },
+  "$defs": {
+    "ai_text": {
+      "type": "object",
+      "required": ["text", "ai_generated"],
+      "additionalProperties": false,
+      "properties": {
+        "text": {"type": "string"},
+        "ai_generated": {"type": "boolean"},
+        "key_terms": {"type": "array", "items": {"type": "string"}},
+        "next_preview": {"type": "string"}
+      }
+    },
+    "voice_settings": {
+      "type": "object",
+      "required": ["engine"],
+      "properties": {
+        "engine": {"enum": ["macos_say", "voicevox", "google", "azure", "openai"]},
+        "speaker": {"type": "string"},
+        "speed": {"type": "number", "minimum": 0.5, "maximum": 2.0},
+        "pitch": {"type": "number", "minimum": -1.0, "maximum": 1.0},
+        "volume": {"type": "number", "minimum": 0.0, "maximum": 2.0},
+        "sentence_pause_ms": {"type": "integer", "minimum": 0},
+        "section_pause_ms": {"type": "integer", "minimum": 0},
+        "chapter_pause_ms": {"type": "integer", "minimum": 0}
+      }
+    },
+    "audio": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {"enum": ["not_started", "done", "failed", "stale"]},
+        "text_hash": {"type": ["string", "null"]},
+        "file": {"type": ["string", "null"]},
+        "duration_sec": {"type": ["number", "null"]},
+        "generated_at": {"type": ["string", "null"]},
+        "error": {"type": ["string", "null"]}
+      }
+    },
+    "validation": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {"enum": ["pending", "passed", "warning", "failed"]},
+        "char_coverage": {"type": ["number", "null"]},
+        "numbers_match": {"type": ["boolean", "null"]},
+        "messages": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "figure": {
+      "type": "object",
+      "required": ["page", "kind"],
+      "properties": {
+        "page": {"type": "integer", "minimum": 1},
+        "kind": {"enum": ["image", "table", "drawing", "formula"]},
+        "bbox": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4},
+        "description": {"type": "string"}
+      }
+    },
+    "review_item": {
+      "type": "object",
+      "required": ["page", "reason"],
+      "properties": {
+        "page": {"type": "integer", "minimum": 1},
+        "reason": {"type": "string"},
+        "text": {"type": "string"}
+      }
+    },
+    "section": {
+      "type": "object",
+      "required": ["section_id", "heading", "source_pages", "original_text", "audio_text", "validation", "audio"],
+      "additionalProperties": false,
+      "properties": {
+        "section_id": {"type": "string"},
+        "heading": {"type": "string"},
+        "source_pages": {"type": "array", "items": {"type": "integer", "minimum": 1}},
+        "original_text": {"type": "string"},
+        "audio_text": {"type": "string"},
+        "supplement_text": {"$ref": "#/$defs/ai_text"},
+        "figures": {"type": "array", "items": {"$ref": "#/$defs/figure"}},
+        "needs_review": {"type": "array", "items": {"$ref": "#/$defs/review_item"}},
+        "validation": {"$ref": "#/$defs/validation"},
+        "audio": {"$ref": "#/$defs/audio"}
+      }
+    },
+    "chapter": {
+      "type": "object",
+      "required": ["chapter_id", "chapter_number", "chapter_title", "sections"],
+      "additionalProperties": false,
+      "properties": {
+        "chapter_id": {"type": "string", "pattern": "^CH[0-9]{3,}$"},
+        "chapter_number": {"type": "integer", "minimum": 0},
+        "chapter_title": {"type": "string"},
+        "intro_text": {"$ref": "#/$defs/ai_text"},
+        "sections": {"type": "array", "items": {"$ref": "#/$defs/section"}},
+        "summary": {"$ref": "#/$defs/ai_text"},
+        "audio": {"$ref": "#/$defs/audio"}
+      }
+    }
+  }
+}

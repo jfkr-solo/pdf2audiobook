@@ -33,8 +33,8 @@ def _tesseract_tsv(png: bytes, lang: str, psm: int) -> list[dict[str, str]]:
 
 
 def tesseract_page(page: pymupdf.Page, vertical: bool, dpi: int = 300,
-                   low_conf: float = 60.0) -> dict[str, Any]:
-    pix = page.get_pixmap(dpi=dpi, colorspace=pymupdf.csGRAY)
+                   low_conf: float = 60.0, clip=None) -> dict[str, Any]:
+    pix = page.get_pixmap(dpi=dpi, colorspace=pymupdf.csGRAY, clip=clip)
     lang, psm = ("jpn_vert", 5) if vertical else ("jpn", 3)
     rows = _tesseract_tsv(pix.tobytes("png"), lang, psm)
     scale = 72.0 / dpi
@@ -112,6 +112,25 @@ def ocrmac_page(page: pymupdf.Page, dpi: int = 300) -> dict[str, Any]:
     confs = [l["ocr_conf"] for l in lines]
     return {"lines": lines, "mean_conf": round(statistics.mean(confs), 1) if confs else 0.0,
             "low_conf_words": weak, "writing_mode": "vertical" if vertical else "horizontal"}
+
+
+def render_png(page: pymupdf.Page, dpi: int, clip=None, enhance: bool = False) -> bytes:
+    """OCR 用にグレースケールで描画する。enhance なら紙の白飛び・影をならして薄い文字を濃くする
+    （スキャン時のムラで端の行が薄く、OCR が読み落とす本のため）。"""
+    pix = page.get_pixmap(dpi=dpi, colorspace=pymupdf.csGRAY, clip=clip)
+    if not enhance:
+        return pix.tobytes("png")
+    import numpy as np
+    from PIL import Image, ImageFilter
+
+    a = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width)
+    im = Image.fromarray(a.copy())
+    bg = np.asarray(im.filter(ImageFilter.MaxFilter(15)).filter(ImageFilter.GaussianBlur(25)), dtype=float)
+    n = np.clip(a / np.maximum(bg, 1) * 255, 0, 255)       # 背景の明るさで割って地を白にそろえる
+    n = np.clip((n - 120) / (245 - 120) * 255, 0, 255)     # 薄い文字を濃く
+    buf = io.BytesIO()
+    Image.fromarray(n.astype(np.uint8)).save(buf, "PNG")
+    return buf.getvalue()
 
 
 # ---------------------------------------------------------------- Google Cloud Vision
@@ -194,9 +213,10 @@ def _vision_lines(res: dict[str, Any], scale: float) -> list[dict[str, Any]]:
 
 
 def google_page(page: pymupdf.Page, api_key: str, dpi: int = 300, cache_path=None,
-                lang_hints: list[str] | None = None) -> dict[str, Any]:
+                lang_hints: list[str] | None = None, clip=None, enhance: bool = False) -> dict[str, Any]:
     """Google Cloud Vision の DOCUMENT_TEXT_DETECTION で OCR する。
-    応答は cache_path に保存し、再実行時は API を呼ばない（料金の二重払いを防ぐ）。"""
+    応答は cache_path に保存し、再実行時は API を呼ばない（料金の二重払いを防ぐ）。
+    clip を渡すとその範囲（見開きの片側など）だけを読む。座標は clip の左上が原点になる。"""
     import json
     from pathlib import Path
 
@@ -204,8 +224,7 @@ def google_page(page: pymupdf.Page, api_key: str, dpi: int = 300, cache_path=Non
     if cache_path and Path(cache_path).exists():
         res = json.loads(Path(cache_path).read_text(encoding="utf-8"))
     if res is None:
-        pix = page.get_pixmap(dpi=dpi, colorspace=pymupdf.csGRAY)
-        res = _vision_request(pix.tobytes("png"), api_key, lang_hints or ["ja"])
+        res = _vision_request(render_png(page, dpi, clip, enhance), api_key, lang_hints or ["ja"])
         res["_dpi"] = dpi
         if cache_path:
             Path(cache_path).parent.mkdir(parents=True, exist_ok=True)

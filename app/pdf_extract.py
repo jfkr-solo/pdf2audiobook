@@ -145,6 +145,17 @@ def _in_margin(bbox, w, h, ratio) -> bool:
     return y1 <= h * ratio or y0 >= h * (1 - ratio) or x1 <= w * ratio or x0 >= w * (1 - ratio)
 
 
+def _spread_clips(page: pymupdf.Page, mode: str, rtl: bool) -> list[tuple[str, Any]]:
+    """見開き（横長）でスキャンされたページを左右の2ページに分ける。
+    縦書きの本は右ページが先（rtl）。分けないときは [("", None)]。"""
+    r = page.rect
+    if mode is False or mode == "false" or (mode == "auto" and r.width < r.height * 1.2):
+        return [("", None)]
+    mid = r.x0 + r.width / 2
+    right, left = pymupdf.Rect(mid, r.y0, r.x1, r.y1), pymupdf.Rect(r.x0, r.y0, mid, r.y1)
+    return [("R", right), ("L", left)] if rtl else [("L", left), ("R", right)]
+
+
 def extract(pdf_path: str, cfg: dict[str, Any] | None = None, pages_range: range | None = None,
             progress=None) -> dict[str, Any]:
     from . import ocr as ocrmod
@@ -166,11 +177,22 @@ def extract(pdf_path: str, cfg: dict[str, Any] | None = None, pages_range: range
     vertical: bool | None = None if vertical_cfg == "auto" else bool(vertical_cfg)
     indices = list(pages_range) if pages_range is not None else range(doc.page_count)
 
-    # 1) ページごとに抽出（必要なら OCR）
+    split_cfg = ecfg.get("split_spreads", False)  # false | auto（横長のスキャンページを左右に分ける）
+    rtl = ecfg.get("spread_order", "rtl") == "rtl"
+
+    # 1) ページごとに抽出（必要なら OCR）。見開きスキャンは左右に分けて別のページとして扱う
+    logical = []
     for i in indices:
         page = doc[i]
-        pno = page.number + 1
-        lines = _page_lines(page)
+        lines0 = _page_lines(page)
+        scanned = sum(len(l["text"]) for l in lines0) < ocr_min and page.get_images()
+        clips = _spread_clips(page, split_cfg, rtl) if scanned else [("", None)]
+        for side, clip in clips:
+            logical.append((page, side, clip, lines0 if clip is None else []))
+    split = any(clip is not None for _, _, clip, _ in logical)
+    for k, (page, side, clip, lines) in enumerate(logical):
+        pno = k + 1 if split else page.number + 1
+        rect = clip or page.rect
         method, mode, mean_conf = "text", "horizontal", None
         review: list[dict] = []
         n_chars = sum(len(l["text"]) for l in lines)
@@ -178,11 +200,13 @@ def extract(pdf_path: str, cfg: dict[str, Any] | None = None, pages_range: range
             if ocr_engine == "tesseract":
                 if vertical is None:
                     vertical = ocrmod.detect_vertical(page)
-                r = ocrmod.tesseract_page(page, vertical, dpi=ocr_dpi, low_conf=low_conf)
+                r = ocrmod.tesseract_page(page, vertical, dpi=ocr_dpi, low_conf=low_conf, clip=clip)
             elif ocr_engine == "google":
                 import os
-                cache = Path(ecfg["cache_dir"]) / f"p{pno:04d}.json" if ecfg.get("cache_dir") else None
-                r = ocrmod.google_page(page, os.environ["GOOGLE_VISION_API_KEY"], dpi=ocr_dpi, cache_path=cache)
+                name = f"p{page.number + 1:04d}{side}.json"
+                cache = Path(ecfg["cache_dir"]) / name if ecfg.get("cache_dir") else None
+                r = ocrmod.google_page(page, os.environ["GOOGLE_VISION_API_KEY"], dpi=ocr_dpi, cache_path=cache,
+                                       clip=clip, enhance=bool(ecfg.get("ocr_enhance", False)))
             elif ocr_engine == "ocrmac":
                 r = ocrmod.ocrmac_page(page, dpi=ocr_dpi)
             else:
@@ -202,17 +226,18 @@ def extract(pdf_path: str, cfg: dict[str, Any] | None = None, pages_range: range
                 review.append({"page": pno, "reason": "判読不能文字を含む", "text": l["text"]})
         pages.append({
             "page": pno,
-            "width": round(page.rect.width, 1),
-            "height": round(page.rect.height, 1),
+            **({"pdf_page": page.number + 1, "side": side} if split else {}),
+            "width": round(rect.width, 1),
+            "height": round(rect.height, 1),
             "method": method,
             "writing_mode": mode,
             "ocr_mean_conf": mean_conf,
             "lines": lines,
-            "figures": _figures(page),
+            "figures": _figures(page) if clip is None else [],
             "needs_review": review,
         })
         if progress:
-            progress(pno, len(indices))
+            progress(pno, len(logical))
 
     # 2) ヘッダー・フッター・柱・ページ番号の検出（上下左右の余白）
     margin_counter: Counter[str] = Counter()
@@ -230,6 +255,18 @@ def extract(pdf_path: str, cfg: dict[str, Any] | None = None, pages_range: range
                                and _in_margin(l["bbox"], p["width"], p["height"], margin_ratio * 1.6)})
     ocr_heads = {k for k, c in ocr_margin.items() if c >= 3 and k not in repeated}
 
+    # 柱に含まれる数（書名「50回目の…」の 50 など）は多くのページに同じ値で出るのでノンブルとみなさない
+    num_pages: Counter[int] = Counter()
+    for p in pages:
+        if p["method"].startswith("ocr"):
+            num_pages.update({n for l in p["lines"] if _in_margin(l["bbox"], p["width"], p["height"], margin_ratio * 1.6)
+                              and (n := printed_page_number(l["text"])) is not None})
+    fake_nums = {n for n, c in num_pages.items() if c >= max(3, len(pages) // 10)}
+
+    def page_num(t: str) -> int | None:
+        n = printed_page_number(t)
+        return None if n in fake_nums else n
+
     # 3) 不要行の除去・図表/数式の印付け
     for p in pages:
         kept, removed = [], []
@@ -237,6 +274,14 @@ def extract(pdf_path: str, cfg: dict[str, Any] | None = None, pages_range: range
         tables = [f for f in p["figures"] if f["kind"] == "table"]
         for l in p["lines"]:
             ocr_page = p["method"].startswith("ocr")
+            # OCR がページ番号を本文の最初の行に続けて読むことがある（縦書きで、ノンブルが1行目の真上にある本）。
+            # 行の上端が天の余白にあり、数字で始まる行は先頭の数字をノンブルとして切り離す
+            if ocr_page and p.get("writing_mode") == "vertical" and l["bbox"][1] < p["height"] * 0.07 \
+                    and _norm_margin(l["text"]) not in repeated and _norm(l["text"]) not in ocr_heads:
+                mnum = re.match(r"^\s*(\d{1,3})\s*(?=\D)", unicodedata.normalize("NFKC", l["text"]))
+                if mnum and len(l["text"]) - mnum.end() >= 2:
+                    removed.append({"text": mnum.group(1), "reason": "header_footer"})
+                    l["text"] = unicodedata.normalize("NFKC", l["text"])[mnum.end():]
             in_margin = _in_margin(l["bbox"], p["width"], p["height"], margin_ratio * (1.6 if ocr_page else 1))
             if ocr_page and in_margin and _norm(l["text"]) in ocr_heads and not PAGE_NUM_RE.match(l["text"]):
                 # 柱は本文より小さい文字なのでルビ判定より先に見る
@@ -250,14 +295,14 @@ def extract(pdf_path: str, cfg: dict[str, Any] | None = None, pages_range: range
                 t = l["text"]
                 if _norm_margin(t) in repeated or PAGE_NUM_RE.match(t):
                     # ページ番号だけの行（Google Vision は柱と別の行に読む）からもノンブルを取る
-                    num = printed_page_number(t) if ocr_page else None
+                    num = page_num(t) if ocr_page else None
                     if num and printed is None:
                         printed = num
                     removed.append({"text": t, "reason": "header_footer"})
                     continue
                 if p["method"].startswith("ocr"):
                     m = RUNNING_RE.match(_norm(t))
-                    num = printed_page_number(t)
+                    num = page_num(t)
                     if num and printed is None:
                         printed = num
                     if (m or num) and len(t) <= 30:

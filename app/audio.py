@@ -27,10 +27,11 @@ WHOLE_NAME = "99_全章結合版.mp3"
 
 
 def chapter_label(c: dict[str, Any]) -> str:
-    """読み上げ・ファイル名に使う章の名前。「第N章」が無い本章には付ける（プロローグ・あとがき などには付けない）。"""
+    """読み上げ・ファイル名に使う章の名前。「第N章」が無い本章には付ける（プロローグ・あとがき などには付けない）。
+    数字で始まる章名（小説の日付見出し「2017年11月10日 金曜日」など）は、それ自体が章の名前なので付けない。"""
     t = c["chapter_title"].strip()
     n = c.get("chapter_number")
-    if not n or re.match(r"第\S+章", t) or FRONT_BACK.search(t):
+    if not n or re.match(r"第\S+章", t) or FRONT_BACK.search(t) or re.match(r"[0-9０-９]", t):
         return t
     return f"第{n}章 {t}"
 

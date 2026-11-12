@@ -218,7 +218,8 @@ def cmd_tts(cfg, args) -> int:
     job = db.start_job(conn, args.book_id, "tts")
     prog = lambda i, n, sid: print(f"\r  合成中 {sid} ({i}/{n})", end="", file=sys.stderr, flush=True)  # noqa: E731
     try:
-        stats = synth.run(m, bdir, engine, settings, only=only, force=args.force, limit=args.limit, progress=prog)
+        stats = synth.run(m, bdir, engine, settings, only=only, force=args.force, limit=args.limit, progress=prog,
+                          yomi=_dictionary(cfg, m, bdir))
         print(file=sys.stderr)
     finally:
         manuscript.save(m, bdir / "manuscript.json")  # 途中で止めても、できた節の記録は残す
@@ -294,7 +295,7 @@ def cmd_audio_check(cfg, args) -> int:
     voice = synth.voice_settings(cfg, vs.get("engine"))
     if vs.get("speaker"):
         voice["speaker"] = vs["speaker"]
-    rows = audio_check.check_sections(m, bdir, st, voice)
+    rows = audio_check.check_sections(m, bdir, st, voice, yomi=_dictionary(cfg, m, bdir))
     notes = audio_check.check_files(m, bdir)
     (bdir / "audio_check_report.md").write_text(audio_check.report_markdown(m, rows, notes), encoding="utf-8")
     cnt = {k: sum(r["status"] == k for r in rows) for k in ("passed", "warning", "failed", "not_started")}

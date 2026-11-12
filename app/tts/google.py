@@ -20,6 +20,7 @@ URL = "https://texttospeech.googleapis.com/v1/text:synthesize"
 
 class GoogleTTS(TTSEngine):
     name = "google"
+    ssml = True  # "<speak>" で始まる文章は SSML として送る
 
     def available(self) -> tuple[bool, str]:
         if os.environ.get("GOOGLE_TTS_API_KEY"):
@@ -31,7 +32,7 @@ class GoogleTTS(TTSEngine):
         if not key:
             raise TTSError("GOOGLE_TTS_API_KEY が .env にありません")
         body = {
-            "input": {"text": text},
+            "input": {"ssml": text} if text.lstrip().startswith("<speak>") else {"text": text},
             "voice": {"languageCode": "ja-JP", "name": str(settings.get("speaker") or "ja-JP-Neural2-B")},
             "audioConfig": {
                 "audioEncoding": "LINEAR16",

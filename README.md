@@ -90,6 +90,15 @@ python -m app.cli dict BOOK001 --no-suggest # 候補を足さず一覧だけ
 - 大文字の略語は一文字ずつの読み（DDI→ディーディーアイ）を候補として `"auto": true` 付きで追加。
   読めない英単語は reading を空で追加するので、`dictionary_report.md` を見て読みを書き、確かめたら `auto` を消す
 - 辞書を直したら `python -m app.cli dict BOOK001` をもう一度実行（または `script` で作り直し）
+- 漢字の読み違い（「思いを描く」を「かく」と読むなど）は `"yomi": true` の項目で直す。表記は残したまま、
+  合成時に Google なら `<phoneme alphabet="yomigana">`、他のエンジンなら仮名に置き換える。`"pattern"` で文脈を限定できる
+  ```json
+  {"surface": "描く", "reading": "えがく", "yomi": true, "pattern": "(?<!絵に)描く"}
+  ```
+  読みを直した節だけが `tts` で作り直しになる
+- Google が実際にどう読んでいるかは `python scripts/check_readings.py BOOK001` で洗い出せる
+  （要 `pip install sudachipy sudachidict_core`。読み指定ありとなしの音声が同じかで判定し、`reading_check_report.md` に一覧）。
+  `--try "文脈" 語 候補1 候補2` で、その箇所の Google の読みを候補から当てられる
 
 ## STEP 6 の実行方法
 

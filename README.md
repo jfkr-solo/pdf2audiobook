@@ -204,6 +204,24 @@ Web 画面だけを Cloud Run で動かし、音声は Cloud Storage のバケ�
 - 使わないときはインスタンス 0 台になるので、料金はほぼ音声の保存と転送の分だけ
 - コードを更新したら `git pull && bash deploy/cloudrun.sh` で上書き
 
+## 小説・見開きスキャンの本（例: BOOK002『50回目のファーストキス』）
+
+```bash
+python -m app.cli extract 本.pdf --book-id BOOK002 --title 書名 --ocr-engine google --split-spreads --enhance
+python scripts/apply_ocr_fixes.py BOOK002          # 画像と見比べて確かめた誤読（data/BOOK002/ocr_fixes.json）を反映
+python -m app.cli structure BOOK002 --pages 4-257 --chapter-pattern '20\d\d年\d+月\d+日\(.\)(~(\d+年)?\d+月\d+日\(.\))?'
+python -m app.cli script BOOK002 && python -m app.cli dict BOOK002 && python -m app.cli check BOOK002
+```
+
+- `--split-spreads`: 横長（見開き）でスキャンしたページを左右の2ページに分ける（縦書きは右ページが先）。ページ番号は分けた後の通し番号
+- `--enhance`: スキャンのムラ（白飛び・影）をならしてから OCR する。端の行が薄くて読み落とす本向け。`ocr_dpi: 400` も読み落としが減った
+- ノンブルが本文の1行目にくっついて読まれたもの（「22だろうか」）は切り離す。書名の数字（「50回目の…」の 50）はノンブルとみなさない
+- 縦中横の2桁の数字（「ルート83」「11月21日」）は Google Vision が1桁落とすことが多い。数字を含む行は画像と見比べ、`ocr_fixes.json` に直す
+- `--chapter-pattern`: 文字の大きさで見分けられない章立て（小説の日付見出しなど）を正規表現で指定。指定すると柱・文字サイズによる見出し判定は使わない
+- `--pages`: 表紙・帯・奥付を除く。見開き単位で2回スキャンされたページは自動で除く
+- 小説の段落: 「で始まる行と、前の行が行末まで届かずに終わった次の行を段落の始まりとする（段落ごとに間が入る）
+- 場面転換の ＊ や ☆☆☆ は読まず段落の区切りに、「••••」は間に、「11・5回」は小数として読む
+
 ## 設計上の約束
 
 - 判読できない文字は推測で補わず `needs_review` に記録する

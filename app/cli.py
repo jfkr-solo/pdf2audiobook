@@ -53,6 +53,10 @@ def cmd_extract(cfg, args) -> int:
         prog = lambda i, n: print(f"\r  抽出中 p.{i} ({n}ページ)", end="", file=sys.stderr, flush=True)  # noqa: E731
         if args.ocr_engine:
             cfg.setdefault("extract", {})["ocr_engine"] = args.ocr_engine
+        if args.split_spreads:
+            cfg.setdefault("extract", {})["split_spreads"] = "auto"
+        if args.enhance:
+            cfg.setdefault("extract", {})["ocr_enhance"] = True
         # クラウドOCRの応答はキャッシュし、再実行で二重に課金されないようにする
         cfg.setdefault("extract", {}).setdefault("cache_dir", str(bdir / "cache" / "ocr_google"))
         result = extract(str(dst), cfg, rng, progress=prog)
@@ -85,7 +89,11 @@ def cmd_structure(cfg, args) -> int:
     conn = db.connect(Path(cfg["_root"]) / cfg["db_path"])
     job = db.start_job(conn, args.book_id, "structure")
     try:
-        m, notes = build(pages_doc)
+        rng = None
+        if args.pages:
+            a, _, b = args.pages.partition("-")
+            rng = range(int(a), int(b or a) + 1)
+        m, notes = build(pages_doc, chapter_pattern=args.chapter_pattern, pages_range=rng)
         manuscript.save(m, bdir / "manuscript.json")
         (bdir / "structure_report.md").write_text(report_markdown(m, notes), encoding="utf-8")
     except Exception as e:
@@ -346,8 +354,12 @@ def main(argv=None) -> int:
     p.add_argument("--title")
     p.add_argument("--pages", help="対象ページ（例: 1-30）。省略で全ページ")
     p.add_argument("--ocr-engine", choices=["auto", "google", "ocrmac", "tesseract", "none"], help="config.yaml の設定を上書き")
+    p.add_argument("--split-spreads", action="store_true", help="見開き（横長）でスキャンしたページを左右に分ける（縦書きは右が先）")
+    p.add_argument("--enhance", action="store_true", help="OCR 前にスキャンのムラをならし薄い文字を濃くする（google / 新規読み取りのみ）")
     p = sub.add_parser("structure", help="STEP 3: 章・節を構造化して manuscript.json を作成")
     p.add_argument("book_id")
+    p.add_argument("--chapter-pattern", help="行全体がこの正規表現に合う行を章見出しにする（例: 小説の日付見出し）")
+    p.add_argument("--pages", help="使うページ（pages.json のページ番号、例: 4-257）。表紙・奥付を除くとき")
     p = sub.add_parser("script", help="STEP 4: 節ごとの読み上げ文（audio_text）を作成")
     p.add_argument("book_id")
     p.add_argument("--llm", choices=["none", "anthropic"], help="config.yaml の llm.provider を上書き")

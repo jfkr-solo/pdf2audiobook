@@ -31,13 +31,36 @@ def _similar(a: str, b: str) -> float:
     return SequenceMatcher(None, a[:400], b[:400], autojunk=False).ratio()
 
 
+def dedupe_pages(pages: list[dict], notes: list[str], window: int = 1) -> list[dict]:
+    """同じページを二重にスキャンしたもの（本文がほぼ同じ）は信頼度の高い方だけ残す。
+    window: 何ページ前までと比べるか（見開きスキャンを分けた本では、見開き単位の重複が2ページ離れて出る）"""
+    deduped: list[dict] = []
+    for p in pages:
+        hit = None
+        for k in range(1, window + 1):
+            if len(deduped) >= k and len(p.get("text", "")) >= 20 \
+                    and _similar(deduped[-k].get("text", ""), p.get("text", "")) >= 0.8:
+                hit = k
+                break
+        if hit is None:
+            deduped.append(p)
+            continue
+        prev = deduped[-hit]
+        keep, drop = (prev, p) if (prev.get("ocr_mean_conf") or 0) >= (p.get("ocr_mean_conf") or 0) else (p, prev)
+        deduped[-hit] = keep
+        notes.append(f"p.{drop['page']} は p.{keep['page']} と同じ内容の重複スキャンとみなし除外した")
+    return deduped
+
+
 def order_pages(pages: list[dict]) -> tuple[list[dict], list[str]]:
     """ノンブルが半分以上読めたら、それに沿って並べ直す。読めないページは同じ偶奇の
     近いページのずれ幅から補う（スキャン時の見開き入れ替わり対策）。"""
     notes: list[str] = []
     nums = [p.get("printed_page") for p in pages]
     if sum(n is not None for n in nums) < max(3, len(pages) // 2):
-        return pages, notes
+        # ノンブルが読めない本は PDF の順のまま。見開きを分けた本は2ページ先まで重複を見る
+        window = 2 if any(p.get("side") for p in pages) else 1
+        return dedupe_pages(pages, notes, window), notes
 
     # 各ページの「印刷番号 − PDF上の位置」= ずれ幅。誤読（桁の欠け・余分）は全体の中央値から
     # 大きく外れるので捨て、残りから近傍（同じ偶奇）の多数派のずれ幅を求める
@@ -132,18 +155,7 @@ def order_pages(pages: list[dict]) -> tuple[list[dict], list[str]]:
         p["book_page"] = key
         keyed.append((key if key is not None else 10**6 + i, i, p))
     keyed.sort(key=lambda t: (t[0], t[1]))
-    ordered = [p for _, _, p in keyed]
-    # 同じページを二重にスキャンしたもの（本文がほぼ同じ）は信頼度の高い方だけ残す
-    deduped: list[dict] = []
-    for p in ordered:
-        prev = deduped[-1] if deduped else None
-        if prev is not None and _similar(prev.get("text", ""), p.get("text", "")) >= 0.8:
-            keep, drop = (prev, p) if (prev.get("ocr_mean_conf") or 0) >= (p.get("ocr_mean_conf") or 0) else (p, prev)
-            deduped[-1] = keep
-            notes.append(f"p.{drop['page']} は p.{keep['page']} と同じ内容の重複スキャンとみなし除外した")
-            continue
-        deduped.append(p)
-    ordered = deduped
+    ordered = dedupe_pages([p for _, _, p in keyed], notes)
     moved = sum(1 for a, b in zip(ordered, pages) if a is not b)
     if moved:
         notes.append(f"ノンブルに従って {moved} ページの順序を入れ替えた")
@@ -232,8 +244,15 @@ def _clean_head(s: str | None) -> str | None:
     return s if len(s) >= 2 else None
 
 
-def build(pages_doc: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
-    pages, notes = order_pages(list(pages_doc["pages"]))
+def build(pages_doc: dict[str, Any], chapter_pattern: str | None = None,
+          pages_range: range | None = None) -> tuple[dict[str, Any], list[str]]:
+    """chapter_pattern: この正規表現に行全体が合う行を章の見出しにする（小説の日付見出しなど、
+    文字の大きさでは見分けられない章立て用）。pages_range: 使うページ（論理ページ番号。表紙・奥付を除く）"""
+    src_pages = list(pages_doc["pages"])
+    if pages_range is not None:
+        src_pages = [p for p in src_pages if p["page"] in pages_range]
+    chap_re = re.compile(chapter_pattern) if chapter_pattern else None
+    pages, notes = order_pages(src_pages)
     body = _body_size(pages)
     toc = pages_doc.get("toc") or []
     toc_l1 = {t["page"]: t["title"] for t in toc if t["level"] == 1}
@@ -293,10 +312,13 @@ def build(pages_doc: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                     keep.append(l)
             lines = keep
         base = _indent_threshold(lines, vertical)
+        ends = [l["bbox"][3] if vertical else l["bbox"][2] for l in lines if len(l["text"]) >= 10]
+        line_end = statistics.quantiles(ends, n=4)[2] if len(ends) >= 4 else None  # 行末（地）の位置
+        prev_line = None
         cur_idx[0] = pidx
 
         # 章の切り替え（しおり > 柱）
-        head = canon.get(_clean_head(p.get("running_head")) or "")
+        head = None if chap_re is not None else canon.get(_clean_head(p.get("running_head")) or "")
         chap_title = toc_l1.get(p["page"]) or head
         if chap_title and not toc_l1 and ch is not None and chap_title != ch["title"] \
                 and any(c["title"] == chap_title for c in chapters):
@@ -331,15 +353,20 @@ def build(pages_doc: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             if not text:
                 continue
             norm = unicodedata.normalize("NFKC", text).replace(" ", "")
+            if chap_re is not None and chap_re.fullmatch(norm):
+                flush_pending(ch)
+                ch = new_chapter(norm, p["page"])
+                sec = None
+                continue
             if norm == norm_title(ch["title"]) and not ch["sections"]:
                 flush_pending(None if len(chapters) == 1 else chapters[-2])
                 continue  # 章タイトルそのものの行
             # 柱から章名が取れている本では、章扉の「第3章」や大きな章題の文字は章名と重複するので読まない
-            if canon and not toc_l1 and (re.fullmatch(r"第[0-9０-９一二三四五六七八九十]+章", norm)
+            if canon and not toc_l1 and chap_re is None and (re.fullmatch(r"第[0-9０-９一二三四五六七八九十]+章", norm)
                                          or (is_ocr and l["size"] >= body * 2.2 and len(norm) <= 15)):
                 title_page_idx.append(pidx)
                 continue
-            if (p["page"], norm) in toc_l2 or _is_heading(l, body, is_ocr, base, vertical):
+            if chap_re is None and ((p["page"], norm) in toc_l2 or _is_heading(l, body, is_ocr, base, vertical)):
                 if CHAPTER_RE.match(text) and not toc_l1:
                     flush_pending(ch if ch["sections"] else None)
                     if ch["sections"] or norm_title(ch["title"]) != norm:
@@ -357,7 +384,12 @@ def build(pages_doc: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                 pending_heading = []
             if sec is None:
                 sec = new_section(ch, ch["title"], p["page"])
-            starts = (not sec["paragraphs"]) or _starts_paragraph(l, base, vertical, body) or bool(BULLET_RE.match(text))
+            # 会話文（「で始まる行）と、前の行が行末まで届かずに終わった次の行も段落の始まり（小説の組み方）
+            prev_short = prev_line is not None and line_end is not None and \
+                (prev_line["bbox"][3] if vertical else prev_line["bbox"][2]) < line_end - body * 1.5
+            starts = (not sec["paragraphs"]) or _starts_paragraph(l, base, vertical, body) or bool(BULLET_RE.match(text)) \
+                or text.startswith(("「", "『")) or prev_short
+            prev_line = l
             if starts:
                 sec["paragraphs"].append(text)
             else:

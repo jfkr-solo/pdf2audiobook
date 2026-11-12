@@ -4,6 +4,7 @@ pyyaml>=6.0
 python-dotenv>=1.0
 pytest>=8.0
 numpy>=1.24
+pillow>=10.0
 # Web 画面（STEP 10）
 fastapi>=0.110
 uvicorn>=0.29

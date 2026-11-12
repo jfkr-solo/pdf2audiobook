@@ -75,7 +75,8 @@ def analyze(x: np.ndarray, rate: int, st: dict[str, Any]) -> dict[str, Any]:
             "clip_ratio": float(np.mean(np.abs(x) >= 32767)) if len(x) else 0.0}
 
 
-def check_sections(m: dict[str, Any], bdir: Path, st: dict[str, Any], voice: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def check_sections(m: dict[str, Any], bdir: Path, st: dict[str, Any], voice: dict[str, Any] | None = None,
+                   yomi: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """節ごとの判定の一覧（section_id, status, rate, messages）。音声の無い節は not_started として返す。"""
     rows = []
     for c in m["chapters"]:
@@ -95,7 +96,7 @@ def check_sections(m: dict[str, Any], bdir: Path, st: dict[str, Any], voice: dic
             if a.get("status") == "stale":
                 row["status"] = "failed"
                 row["messages"].append("作り直し待ちです（stale）")
-            if voice is not None and a.get("text_hash") != text_hash(s["audio_text"], voice):
+            if voice is not None and a.get("text_hash") != text_hash(s["audio_text"], voice, yomi):
                 row["status"] = "failed"
                 row["messages"].append("読み上げ文か声の設定が音声を作った後に変わっています")
             x, rate = read_pcm(f)

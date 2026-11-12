@@ -28,7 +28,8 @@ tts:
   speed: 1.0
   pitch: 0.0
   volume: 1.0
-  sentence_pause_ms: 400
+  sentence_pause_ms: 400     # 文ごとに合成するエンジン（openjtalk など）の文の間
+  paragraph_pause_ms: 700    # 段落ごとに合成するエンジン（google）の段落の間に足す無音。文の間はエンジンが自然に取る
   section_pause_ms: 1500
   chapter_pause_ms: 3000
 

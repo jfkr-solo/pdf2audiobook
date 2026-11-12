@@ -3,11 +3,17 @@
 共通辞書（dictionaries/common.json）と教材辞書（data/<BOOK_ID>/dictionary.json）を読み、
 読み上げ文の英字・略語・難読語を読み（カタカナ・ひらがな）に置き換える。教材辞書が優先。
 
+"yomi": true の項目は「表記はそのまま、読みだけ指定」する。読み上げ文（audio_text）は書き換えず、
+音声合成のときに Google TTS なら SSML の <phoneme alphabet="yomigana">、他のエンジンなら読みの文字に置き換える
+（漢字を仮名に書き換えるより、アクセントや区切りが自然なまま読みだけを直せるため）。
+"pattern" に正規表現を書くと、文脈を限定できる（例: "(?<=生き物の)性" → 「さが」）。
+
 辞書に無い英字は「未登録語」として一覧にし、大文字の略語なら一文字ずつの読み（DDI→ディーディーアイ）を
 候補として教材辞書に書き足す（"auto": true 付き）。候補は人が確かめて直し、"auto" を消せば確定。
 """
 from __future__ import annotations
 
+import html
 import json
 import re
 from collections import Counter
@@ -34,11 +40,13 @@ def load(paths: list[str | Path]) -> list[dict[str, Any]]:
             continue
         for e in json.loads(p.read_text(encoding="utf-8")).get("entries", []):
             if e.get("surface") and e.get("reading"):
-                merged[e["surface"]] = e
+                merged[e.get("pattern") or e["surface"]] = e
     return list(merged.values())
 
 
-def _pattern(surface: str) -> re.Pattern:
+def _pattern(surface: str, pattern: str | None = None) -> re.Pattern:
+    if pattern:
+        return re.compile(pattern)
     s = re.escape(surface)
     if re.match(r"[A-Za-z0-9]", surface):
         # 英数字の語は、前後が英数字でないときだけ置き換える（「DDI」の辞書で「KDDI」を壊さない）
@@ -47,10 +55,41 @@ def _pattern(surface: str) -> re.Pattern:
 
 
 def apply(text: str, entries: list[dict[str, Any]]) -> str:
-    """長い表記から順に置き換える（「TCP/IP」を「TCP」「IP」より先に）。"""
-    for e in sorted(entries, key=lambda e: -len(e["surface"])):
-        text = _pattern(e["surface"]).sub(e["reading"], text)
+    """長い表記から順に置き換える（「TCP/IP」を「TCP」「IP」より先に）。yomi の項目は合成時に使うのでここでは触らない。"""
+    for e in sorted((e for e in entries if not e.get("yomi")), key=lambda e: -len(e["surface"])):
+        text = _pattern(e["surface"], e.get("pattern")).sub(e["reading"], text)
     return text
+
+
+def yomi_entries(entries: list[dict[str, Any]], text: str | None = None) -> list[dict[str, Any]]:
+    """読みだけ指定する項目。text を渡すと、その文章に出てくるものだけ（音声の作り直し判定に使う）。"""
+    ys = [e for e in entries if e.get("yomi")]
+    if text is not None:
+        ys = [e for e in ys if _pattern(e["surface"], e.get("pattern")).search(text)]
+    return sorted(ys, key=lambda e: (e.get("pattern") or "", e["surface"]))
+
+
+def _yomi_spans(text: str, entries: list[dict[str, Any]]) -> list[tuple[int, int, str]]:
+    """重ならない (開始, 終了, 読み) の一覧。長い表記を優先。"""
+    spans: list[tuple[int, int, str]] = []
+    for e in sorted(entries, key=lambda e: -len(e["surface"])):
+        for m in _pattern(e["surface"], e.get("pattern")).finditer(text):
+            if m.end() > m.start() and all(m.end() <= a or m.start() >= b for a, b, _ in spans):
+                spans.append((m.start(), m.end(), e["reading"]))
+    return sorted(spans)
+
+
+def apply_yomi(text: str, entries: list[dict[str, Any]], ssml: bool = False) -> str:
+    """yomi の項目を当てる。ssml=True なら SSML 断片（エスケープ済み・<speak> なし）を返す。"""
+    ys = [e for e in entries if e.get("yomi")]
+    out, pos = [], 0
+    esc = html.escape if ssml else (lambda x: x)
+    for a, b, r in _yomi_spans(text, ys):
+        out.append(esc(text[pos:a]))
+        out.append(f'<phoneme alphabet="yomigana" ph="{html.escape(r)}">{html.escape(text[a:b])}</phoneme>' if ssml else r)
+        pos = b
+    out.append(esc(text[pos:]))
+    return "".join(out)
 
 
 def spell_out(token: str) -> str | None:
